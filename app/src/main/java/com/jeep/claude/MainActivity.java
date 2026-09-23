@@ -8,6 +8,7 @@ import android.content.ClipboardManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
+import android.webkit.MimeTypeMap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -32,6 +33,7 @@ import android.widget.ProgressBar;
 
 import org.json.JSONArray;
 
+import java.util.ArrayList;
 import java.util.Locale;
 
 public final class MainActivity extends Activity {
@@ -211,13 +213,35 @@ public final class MainActivity extends Activity {
                 FileChooserParams params) {
             if (pickedFiles != null) pickedFiles.onReceiveValue(null);
             pickedFiles = callback;
+            Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            picker.addCategory(Intent.CATEGORY_OPENABLE);
+            picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
+                    params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+            ArrayList<String> mimeTypes = new ArrayList<>();
+            for (String accept : params.getAcceptTypes()) {
+                if (accept == null) continue;
+                for (String value : accept.split(",")) {
+                    String type = value.trim().toLowerCase(Locale.ROOT);
+                    if (type.startsWith(".")) {
+                        type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(type.substring(1));
+                    }
+                    if (type != null && type.contains("/") && !mimeTypes.contains(type)) {
+                        mimeTypes.add(type);
+                    }
+                }
+            }
+            picker.setType(mimeTypes.size() == 1 ? mimeTypes.get(0) : "*/*");
+            if (mimeTypes.size() > 1) {
+                picker.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toArray(new String[0]));
+            }
             try {
-                startActivityForResult(params.createIntent(), PICK_FILE);
-                return true;
+                startActivityForResult(picker, PICK_FILE);
             } catch (Exception e) {
                 pickedFiles = null;
-                return false;
+                callback.onReceiveValue(null);
             }
+            return true;
         }
 
         @Override public boolean onCreateWindow(WebView view, boolean dialog,
