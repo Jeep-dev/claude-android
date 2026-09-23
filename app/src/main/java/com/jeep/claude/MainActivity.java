@@ -37,7 +37,9 @@ import android.widget.ProgressBar;
 import org.json.JSONArray;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 public final class MainActivity extends Activity {
     private static final String START_PAGE = "https://claude.ai/";
@@ -54,6 +56,9 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> pickedFiles;
     private PermissionRequest pendingMic;
     private boolean inForeground;
+    // Exact hosts approved by the user for this Activity; never approve an entire suffix.
+    private final Set<String> approvedHosts = new HashSet<>();
+    private AlertDialog navigationDialog;
 
     private final Runnable refreshColor = new Runnable() {
         @Override public void run() {
@@ -130,9 +135,14 @@ public final class MainActivity extends Activity {
         view.setWebChromeClient(new BrowserFeatures(secondary));
     }
 
+    private static boolean secureWebLink(Uri uri) {
+        return uri != null && "https".equalsIgnoreCase(uri.getScheme())
+                && (uri.getPort() == -1 || uri.getPort() == 443)
+                && uri.getHost() != null;
+    }
+
     private static boolean allowed(Uri uri) {
-        if (!"https".equalsIgnoreCase(uri.getScheme()) ||
-                (uri.getPort() != -1 && uri.getPort() != 443)) return false;
+        if (!secureWebLink(uri)) return false;
         String host = uri.getHost();
         if (host == null) return false;
         host = host.toLowerCase(Locale.ROOT);
@@ -157,13 +167,35 @@ public final class MainActivity extends Activity {
                 || host.equals("googleusercontent.com") || host.endsWith(".googleusercontent.com");
     }
 
-    private void reject(Uri destination) {
-        new AlertDialog.Builder(this).setMessage(R.string.untrusted_link)
-                .setPositiveButton(R.string.copy, (d, which) -> {
-                    ClipboardManager board = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    board.setPrimaryClip(ClipData.newPlainText("URL", destination.toString()));
-                })
-                .setNegativeButton(android.R.string.cancel, null).show();
+    private boolean canOpen(Uri uri) {
+        return allowed(uri) || (secureWebLink(uri)
+                && approvedHosts.contains(uri.getHost().toLowerCase(Locale.ROOT)));
+    }
+
+    private void copyLink(Uri destination) {
+        ClipboardManager board = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        board.setPrimaryClip(ClipData.newPlainText("URL", destination.toString()));
+    }
+
+    private void confirmNavigation(WebView view, Uri destination) {
+        if (navigationDialog != null && navigationDialog.isShowing()) return;
+        if (!secureWebLink(destination)) {
+            navigationDialog = new AlertDialog.Builder(this)
+                    .setMessage(getString(R.string.unsupported_link, destination.toString()))
+                    .setPositiveButton(R.string.copy, (d, which) -> copyLink(destination))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .create();
+        } else {
+            navigationDialog = new AlertDialog.Builder(this)
+                    .setMessage(getString(R.string.external_link, destination.toString()))
+                    .setPositiveButton(R.string.continue_in_app, (d, which) -> {
+                        approvedHosts.add(destination.getHost().toLowerCase(Locale.ROOT));
+                        if (view == site || view == auxiliary) view.loadUrl(destination.toString());
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .create();
+        }
+        navigationDialog.show();
     }
 
     private final class Guard extends WebViewClient {
@@ -173,16 +205,17 @@ public final class MainActivity extends Activity {
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             if (!request.isForMainFrame()) return false;
             Uri uri = request.getUrl();
-            if (allowed(uri)) return false;
-            if (secondary) closeWindow();
-            reject(uri);
+            if (canOpen(uri)) return false;
+            confirmNavigation(view, uri);
             return true;
         }
 
         @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
             if (secondary && "about:blank".equals(url)) return;
-            if (!allowed(Uri.parse(url))) {
+            Uri destination = Uri.parse(url);
+            if (!canOpen(destination)) {
                 view.stopLoading();
+                confirmNavigation(view, destination);
                 return;
             }
             if (!secondary) {
@@ -396,6 +429,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         ui.removeCallbacks(refreshColor);
+        if (navigationDialog != null) navigationDialog.dismiss();
         if (pickedFiles != null) pickedFiles.onReceiveValue(null);
         if (pendingMic != null) {
             pendingMic.deny();

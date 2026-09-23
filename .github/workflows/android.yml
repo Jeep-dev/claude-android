@@ -40,20 +40,21 @@ jobs:
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.MODIFY_AUDIO_SETTINGS'"
           test "$(printf '%s\n' "$PERMISSIONS" | grep -c '^uses-permission:')" -eq 3
           mkdir -p artifacts
-          cp "$APK" artifacts/Claude-Standalone-v3.0.4.apk
-          sha256sum artifacts/Claude-Standalone-v3.0.4.apk
+          cp "$APK" artifacts/Claude-Standalone-v3.0.5.apk
+          sha256sum artifacts/Claude-Standalone-v3.0.5.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-standalone-v3.0.4
-          path: artifacts/Claude-Standalone-v3.0.4.apk
+          name: claude-standalone-v3.0.5
+          path: artifacts/Claude-Standalone-v3.0.5.apk
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.4
-          name: Standalone Claude v3.0.4
-          files: artifacts/Claude-Standalone-v3.0.4.apk
+          tag_name: v3.0.5
+          name: Standalone Claude v3.0.5
+          files: artifacts/Claude-Standalone-v3.0.5.apk
           body: |
             Standalone embedded WebView. No external browser is opened.
             INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
+            External HTTPS links can be opened inside the WebView after a confirmation prompt, for connector authorization.
             Google OAuth in embedded WebView depends on Google's policy.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
