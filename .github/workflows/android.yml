@@ -37,17 +37,17 @@ jobs:
           PERMISSIONS=$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$APK" | grep '^uses-permission:' || true)
           test "$PERMISSIONS" = "uses-permission: name='android.permission.INTERNET'"
           mkdir -p artifacts
-          cp "$APK" artifacts/Claude-Standalone-v3.0.1.apk
-          sha256sum artifacts/Claude-Standalone-v3.0.1.apk
+          cp "$APK" artifacts/Claude-Standalone-v3.0.2.apk
+          sha256sum artifacts/Claude-Standalone-v3.0.2.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-standalone-v3.0.1
-          path: artifacts/Claude-Standalone-v3.0.1.apk
+          name: claude-standalone-v3.0.2
+          path: artifacts/Claude-Standalone-v3.0.2.apk
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.1
-          name: Standalone Claude v3.0.1
-          files: artifacts/Claude-Standalone-v3.0.1.apk
+          tag_name: v3.0.2
+          name: Standalone Claude v3.0.2
+          files: artifacts/Claude-Standalone-v3.0.2.apk
           body: |
             Standalone embedded WebView. No external browser is opened.
             Only INTERNET permission. Google OAuth in embedded WebView is not supported.

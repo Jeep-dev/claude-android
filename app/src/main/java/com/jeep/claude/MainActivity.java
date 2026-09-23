@@ -110,7 +110,8 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setSupportMultipleWindows(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        // Google's sign-in widget may create its popup from an asynchronous callback.
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setGeolocationEnabled(false);
@@ -118,7 +119,8 @@ public final class MainActivity extends Activity {
         settings.setSafeBrowsingEnabled(true);
         view.setBackgroundColor(CREAM);
         CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(view, false);
+        // OAuth widgets rely on cross-site cookies; they remain inside this app's WebView profile.
+        CookieManager.getInstance().setAcceptThirdPartyCookies(view, true);
         view.setWebViewClient(new Guard(secondary));
         view.setWebChromeClient(new BrowserFeatures(secondary));
     }
@@ -130,7 +132,8 @@ public final class MainActivity extends Activity {
         if (host == null) return false;
         host = host.toLowerCase(Locale.ROOT);
         return host.equals("claude.ai") || host.endsWith(".claude.ai")
-                || host.equals("anthropic.com") || host.endsWith(".anthropic.com");
+                || host.equals("anthropic.com") || host.endsWith(".anthropic.com")
+                || google(uri);
     }
 
     private static boolean google(Uri uri) {
@@ -142,19 +145,12 @@ public final class MainActivity extends Activity {
     }
 
     private void reject(Uri destination) {
-        if (google(destination)) {
-            new AlertDialog.Builder(this)
-                    .setTitle(R.string.google_blocked_title)
-                    .setMessage(R.string.google_blocked_body)
-                    .setPositiveButton(android.R.string.ok, null).show();
-        } else {
-            new AlertDialog.Builder(this).setMessage(R.string.untrusted_link)
-                    .setPositiveButton(R.string.copy, (d, which) -> {
-                        ClipboardManager board = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                        board.setPrimaryClip(ClipData.newPlainText("URL", destination.toString()));
-                    })
-                    .setNegativeButton(android.R.string.cancel, null).show();
-        }
+        new AlertDialog.Builder(this).setMessage(R.string.untrusted_link)
+                .setPositiveButton(R.string.copy, (d, which) -> {
+                    ClipboardManager board = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    board.setPrimaryClip(ClipData.newPlainText("URL", destination.toString()));
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
     }
 
     private final class Guard extends WebViewClient {
@@ -246,7 +242,7 @@ public final class MainActivity extends Activity {
 
         @Override public boolean onCreateWindow(WebView view, boolean dialog,
                 boolean userGesture, Message result) {
-            if (!userGesture || auxiliary != null) return false;
+            if (auxiliary != null) return false;
             auxiliary = new WebView(MainActivity.this);
             configure(auxiliary, true);
             overlay.addView(auxiliary, 0, new FrameLayout.LayoutParams(-1, -1));
@@ -257,8 +253,9 @@ public final class MainActivity extends Activity {
         }
 
         @Override public void onCloseWindow(WebView view) {
+            // The opener receives the OAuth result from the page; reloading here
+            // would unnecessarily destroy the current conversation.
             closeWindow();
-            site.reload();
         }
     }
 
@@ -312,6 +309,12 @@ public final class MainActivity extends Activity {
         int light = (299 * Color.red(value) + 587 * Color.green(value)
                 + 114 * Color.blue(value)) / 1000 > 128 ? bits : 0;
         window.getDecorView().setSystemUiVisibility((old & ~bits) | light);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // singleTask returns to this live WebView; do not call loadUrl here.
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
