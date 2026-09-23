@@ -1,0 +1,55 @@
+name: Standalone Android APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+      - name: Restore signing key
+        env:
+          ENCODED_KEY: ${{ secrets.CLAUDE_KEYSTORE_B64 }}
+        run: |
+          test -n "$ENCODED_KEY"
+          printf '%s' "$ENCODED_KEY" | base64 --decode > "$RUNNER_TEMP/app.jks"
+          chmod 600 "$RUNNER_TEMP/app.jks"
+      - name: Build
+        env:
+          CLAUDE_KEYSTORE_FILE: ${{ runner.temp }}/app.jks
+          CLAUDE_KEYSTORE_PASSWORD: ${{ secrets.CLAUDE_KEYSTORE_PASSWORD }}
+          CLAUDE_KEY_PASSWORD: ${{ secrets.CLAUDE_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Check signature and exact permissions
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          PERMISSIONS=$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$APK" | grep '^uses-permission:' || true)
+          test "$PERMISSIONS" = "uses-permission: name='android.permission.INTERNET'"
+          mkdir -p artifacts
+          cp "$APK" artifacts/Claude-Standalone-v3.apk
+          sha256sum artifacts/Claude-Standalone-v3.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-standalone-v3
+          path: artifacts/Claude-Standalone-v3.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v3.0.0
+          name: Standalone Claude v3.0.0
+          files: artifacts/Claude-Standalone-v3.apk
+          body: |
+            Standalone embedded WebView. No external browser is opened.
+            Only INTERNET permission. Google OAuth in embedded WebView is not supported.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

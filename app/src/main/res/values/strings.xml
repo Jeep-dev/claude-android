@@ -1,9 +1,8 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Claude</string>
-    <string name="opening">正在浏览器中打开 claude.ai…</string>
-    <string name="browser_closed">浏览器已关闭。可重新打开 Claude，或返回桌面。</string>
-    <string name="browser_missing">未找到可打开网页的浏览器。请安装或启用浏览器后重试。</string>
-    <string name="open_button">打开 Claude</string>
-    <string name="home_button">返回桌面</string>
+    <string name="close">关闭</string>
+    <string name="google_blocked_title">Google 登录不可用</string>
+    <string name="google_blocked_body">Google 禁止在 Android WebView 内进行 OAuth 登录。此独立应用不会启动外部浏览器，也不会伪装浏览器绕过限制。请在 Claude 登录页使用电子邮件登录。</string>
+    <string name="untrusted_link">此链接不属于 Claude 官方网站。为了保持应用独立，不会跳转到浏览器。你可以复制链接。</string>
+    <string name="copy">复制链接</string>
 </resources>
