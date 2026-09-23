@@ -182,12 +182,8 @@ public class MainActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (webView != null && webView.canGoBack()) {
-                    webView.goBack();
-                } else {
-                    setEnabled(false);
-                    getOnBackPressedDispatcher().onBackPressed();
-                }
+                // 不响应 WebView 网页路由回退，侧滑返回直接退出/返回桌面，保持原生 App 手感
+                moveTaskToBack(true);
             }
         });
     }

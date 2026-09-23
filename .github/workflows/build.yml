@@ -35,11 +35,7 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p output
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk output/Claude-App-v1.0.0.apk
-          else
-            cp app/build/outputs/apk/debug/app-debug.apk output/Claude-App-v1.0.0.apk
-          fi
+          find app/build/outputs/apk/release -name "*.apk" -exec cp {} output/Claude-App.apk \; || find app/build/outputs/apk -name "*.apk" -exec cp {} output/Claude-App.apk \;
           ls -lh output/
 
       - name: Upload Artifact
@@ -52,16 +48,16 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Claude Android WebApp v1.0.0
-          tag_name: v1.0.0
+          name: Claude Android App
+          tag_name: latest
           files: output/*.apk
           draft: false
           prerelease: false
           body: |
             ## Claude Android WebApp (Safe Sandbox Edition)
             - 🛡️ **严格沙盒隔离**：零敏感权限（无 SIM 卡读取、无基站、无 WiFi SSID、无地理位置）。
-            - ⚡ **原生体验**：沉浸式暗色界面、原生手势返回、下拉刷新、图片/文档附件上传支持。
-            - 🔑 **支持 Google 一键登录**：优化 User-Agent 绕过 Google 403 `disallowed_useragent` 限制。
-            - 📦 **免安装配置**：APK 由 GitHub Actions 自动化编译打包。
+            - 🔙 **侧滑手势优化**：侧滑直接退出应用回到桌面，绝不困在网页路由历史里。
+            - 🔑 **支持 Google 一键登录**：定制 User-Agent 规避 Google 403 `disallowed_useragent`。
+            - 📦 **开箱即用**：由 GitHub Actions 自动化编译打包。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
