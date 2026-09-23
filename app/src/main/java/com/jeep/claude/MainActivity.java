@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -220,13 +221,16 @@ public final class MainActivity extends Activity {
                     && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resources[0]);
             if (!inForeground || current == null || !claudeOrigin(Uri.parse(current))
                     || !claudeOrigin(origin) || !audioOnly) {
+                Log.i("ClaudeMic", "WebView media permission rejected by origin/state/resource policy");
                 request.deny();
                 return;
             }
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                     == PackageManager.PERMISSION_GRANTED) {
+                Log.i("ClaudeMic", "WebView audio capture granted");
                 request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
             } else {
+                Log.i("ClaudeMic", "Requesting Android microphone permission");
                 if (pendingMic != null) pendingMic.deny();
                 pendingMic = request;
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, ASK_MIC);
@@ -313,8 +317,10 @@ public final class MainActivity extends Activity {
         PermissionRequest request = pendingMic;
         pendingMic = null;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            Log.i("ClaudeMic", "Android microphone permission granted");
             request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
         } else {
+            Log.i("ClaudeMic", "Android microphone permission denied");
             request.deny();
         }
     }

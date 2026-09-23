@@ -37,22 +37,23 @@ jobs:
           PERMISSIONS=$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$APK" | grep '^uses-permission:' || true)
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.INTERNET'"
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.RECORD_AUDIO'"
-          test "$(printf '%s\n' "$PERMISSIONS" | grep -c '^uses-permission:')" -eq 2
+          printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.MODIFY_AUDIO_SETTINGS'"
+          test "$(printf '%s\n' "$PERMISSIONS" | grep -c '^uses-permission:')" -eq 3
           mkdir -p artifacts
-          cp "$APK" artifacts/Claude-Standalone-v3.0.3.apk
-          sha256sum artifacts/Claude-Standalone-v3.0.3.apk
+          cp "$APK" artifacts/Claude-Standalone-v3.0.4.apk
+          sha256sum artifacts/Claude-Standalone-v3.0.4.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-standalone-v3.0.3
-          path: artifacts/Claude-Standalone-v3.0.3.apk
+          name: claude-standalone-v3.0.4
+          path: artifacts/Claude-Standalone-v3.0.4.apk
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.3
-          name: Standalone Claude v3.0.3
-          files: artifacts/Claude-Standalone-v3.0.3.apk
+          tag_name: v3.0.4
+          name: Standalone Claude v3.0.4
+          files: artifacts/Claude-Standalone-v3.0.4.apk
           body: |
             Standalone embedded WebView. No external browser is opened.
-            INTERNET plus on-demand RECORD_AUDIO for Claude voice dictation.
+            INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
             Google OAuth in embedded WebView depends on Google's policy.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

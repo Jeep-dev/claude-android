@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Requested at runtime only when Claude asks to record a voice message. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Chromium WebView needs audio routing access to enumerate/capture mic input. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <application
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="false"
