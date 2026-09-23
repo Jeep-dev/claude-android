@@ -28,6 +28,10 @@ android {
             minifyEnabled false
             signingConfig signingConfigs.release
         }
+        debug {
+            // Installable alongside v1 and the signed v2 release for testing.
+            applicationIdSuffix '.preview'
+        }
     }
 
     compileOptions {

@@ -13,7 +13,7 @@ A minimal Android launcher for `https://claude.ai/`. The *entire* website and it
 
 ## Building and signing
 
-GitHub Actions builds on every push to `main`, verifies APK signature and verifies no permission is present, and publishes `v2.0.0`. CI uses a fixed signing key in GitHub repository secrets (`CLAUDE_KEYSTORE_B64`, `CLAUDE_KEYSTORE_PASSWORD`, `CLAUDE_KEY_PASSWORD`). **Back up that keystore securely:** without it, subsequent APKs cannot update v2 in place. Do not commit the keystore. The previous v1 CI used a different ephemeral debug key, so installing v2 over v1 requires first removing v1 and **losing its app data** (browser data remains independent). Do not uninstall v1 without consent.
+GitHub Actions builds on every push to `main`, verifies both APKs' signatures and that neither has permissions, and publishes the release APK as `v2.0.0`. A separate `Claude-Preview.apk` artifact has application ID `com.jeep.claude.preview`; it can be installed beside v1 without deleting v1's data, but uses an ephemeral debug signature and is for testing only. CI uses a fixed signing key in GitHub repository secrets (`CLAUDE_KEYSTORE_B64`, `CLAUDE_KEYSTORE_PASSWORD`, `CLAUDE_KEY_PASSWORD`). **Back up that keystore securely:** without it, subsequent APKs cannot update v2 in place. Do not commit the keystore. The previous v1 CI used a different ephemeral debug key, so installing v2 over v1 requires first removing v1 and **losing its app data** (browser data remains independent). Do not uninstall v1 without consent.
 
 Local build: provide environment variables `CLAUDE_KEYSTORE_FILE`, `CLAUDE_KEYSTORE_PASSWORD`, `CLAUDE_KEY_ALIAS=claude`, `CLAUDE_KEY_PASSWORD`; run `gradle :app:assembleRelease` with JDK 17 and Android SDK 34.
 

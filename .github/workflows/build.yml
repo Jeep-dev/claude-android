@@ -35,21 +35,24 @@ jobs:
           CLAUDE_KEYSTORE_PASSWORD: ${{ secrets.CLAUDE_KEYSTORE_PASSWORD }}
           CLAUDE_KEY_ALIAS: claude
           CLAUDE_KEY_PASSWORD: ${{ secrets.CLAUDE_KEY_PASSWORD }}
-        run: gradle --no-daemon :app:assembleRelease
+        run: gradle --no-daemon :app:assembleRelease :app:assembleDebug
 
       - name: Verify and publish APK artifact
         run: |
           mkdir -p output
           cp app/build/outputs/apk/release/app-release.apk output/Claude-App-v2.apk
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose output/Claude-App-v2.apk
-          if "$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions output/Claude-App-v2.apk | grep -q '^uses-permission:'; then
-            echo 'Unexpected permission in APK'; exit 1
-          fi
-          sha256sum output/Claude-App-v2.apk
+          cp app/build/outputs/apk/debug/app-debug.apk output/Claude-Preview.apk
+          for apk in output/*.apk; do
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$apk"
+            if "$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$apk" | grep -q '^uses-permission:'; then
+              echo "Unexpected permission in $apk"; exit 1
+            fi
+            sha256sum "$apk"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: Claude-App-v2
-          path: output/Claude-App-v2.apk
+          path: output/*.apk
           retention-days: 30
       - uses: softprops/action-gh-release@v2
         with:
