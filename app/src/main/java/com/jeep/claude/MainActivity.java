@@ -15,7 +15,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.provider.Settings;
 import android.util.Log;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -89,6 +91,7 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         paintBars(CREAM);
+        preferFastDisplay();
         screen = new FrameLayout(this);
         screen.setBackgroundColor(CREAM);
         site = new WebView(this);
@@ -127,6 +130,36 @@ public final class MainActivity extends Activity {
 
         if (saved == null || site.restoreState(saved) == null) site.loadUrl(START_PAGE);
         ui.post(this::updatePageActions);
+    }
+
+    private void preferFastDisplay() {
+        // Request a faster mode for this Activity only, respecting the user's system peak.
+        try {
+            float peak = Settings.System.getFloat(getContentResolver(), "peak_refresh_rate", 0f);
+            Display display = getWindowManager().getDefaultDisplay();
+            Display.Mode current = display.getMode();
+            Display.Mode best = null;
+            if (peak > 60f) {
+                for (Display.Mode mode : display.getSupportedModes()) {
+                    if (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                            && mode.getPhysicalHeight() == current.getPhysicalHeight()
+                            && mode.getRefreshRate() <= peak + 0.1f
+                            && mode.getRefreshRate() > 60f
+                            && (best == null || mode.getRefreshRate() > best.getRefreshRate())) {
+                        best = mode;
+                    }
+                }
+            }
+            WindowManager.LayoutParams params = getWindow().getAttributes();
+            int modeId = best == null ? 0 : best.getModeId();
+            if (params.preferredDisplayModeId != modeId) {
+                params.preferredDisplayModeId = modeId;
+                getWindow().setAttributes(params);
+                Log.i("ClaudeDisplay", "Requested display mode " + modeId);
+            }
+        } catch (Exception e) {
+            Log.w("ClaudeDisplay", "Keeping system-selected display rate", e);
+        }
     }
 
     private int dp(int pixels) {
@@ -490,6 +523,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        preferFastDisplay();
         inForeground = true;
         ui.removeCallbacks(refreshColor);
         ui.post(refreshColor);
