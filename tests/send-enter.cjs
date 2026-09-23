@@ -6,12 +6,13 @@ const script = fs.readFileSync('app/src/main/assets/claude-send-enter.js', 'utf8
 function test(name, action, expected) {
   let clicks = 0;
   let blocked = 0;
+  let hints = 0;
   const listeners = {};
   const editor = {
     textContent: 'hello',
     matches: selector => selector.includes('ProseMirror'),
     getAttribute: () => null,
-    setAttribute: () => {},
+    setAttribute: () => hints++,
   };
   const button = {
     disabled: false,
@@ -26,7 +27,7 @@ function test(name, action, expected) {
     addEventListener: (type, handler) => { listeners[type] = handler; },
   };
   const context = { window: {}, document,
-    MutationObserver: class { observe() {} },
+    MutationObserver: class { constructor() { throw Error('Do not observe Claude streaming DOM'); } },
   };
   vm.runInNewContext(script, context);
   function emit(type, props = {}) {
@@ -34,10 +35,15 @@ function test(name, action, expected) {
       stopImmediatePropagation: () => {}, ...props };
     listeners[type](event);
   }
-  action({ emit, editor, button, document });
+  action({ emit, editor, button, document, hints: () => hints });
   assert.deepEqual([clicks, blocked], expected, name);
 }
 
+test('new composer is marked only when focused', ({ emit, editor, hints }) => {
+  assert.equal(hints(), 1);
+  emit('focusin', { target: editor });
+  assert.equal(hints(), 2);
+}, [0, 0]);
 test('plain Enter sends', ({ emit }) => emit('keydown', { key: 'Enter', keyCode: 13 }), [1, 1]);
 test('mobile beforeinput sends', ({ emit }) => emit('beforeinput', { inputType: 'insertParagraph' }), [1, 1]);
 test('Shift+Enter remains newline', ({ emit }) => {

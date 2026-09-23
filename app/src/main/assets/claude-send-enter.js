@@ -9,16 +9,14 @@
   const editorSelector = 'div.ProseMirror[contenteditable="true"]';
   const buttonSelector = 'button[aria-label="Send message"], button[aria-label="Send Message"], button[data-testid="send-button"]';
 
-  function markEditors() {
-    document.querySelectorAll(editorSelector).forEach(editor => {
-      if (editor.getAttribute('enterkeyhint') !== 'send') {
-        editor.setAttribute('enterkeyhint', 'send');
-      }
-    });
+  function markEditor(editor) {
+    if (editor?.matches?.(editorSelector) && editor.getAttribute('enterkeyhint') !== 'send') {
+      editor.setAttribute('enterkeyhint', 'send');
+    }
   }
-  markEditors();
-  new MutationObserver(markEditors).observe(document.documentElement,
-      { childList: true, subtree: true });
+  // Do not observe the entire document: Claude streams frequent DOM mutations.
+  document.querySelectorAll(editorSelector).forEach(markEditor);
+  document.addEventListener('focusin', e => markEditor(e.target), true);
 
   document.addEventListener('compositionstart', e => {
     if (e.target?.matches?.(editorSelector)) composing = true;

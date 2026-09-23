@@ -64,6 +64,7 @@ public final class MainActivity extends Activity {
     private final Set<String> approvedHosts = new HashSet<>();
     private AlertDialog navigationDialog;
     private String sendEnterScript;
+    private int lastBarColor = Color.TRANSPARENT;
 
     private final Runnable refreshColor = new Runnable() {
         @Override public void run() {
@@ -77,11 +78,11 @@ public final class MainActivity extends Activity {
                     try {
                         String css = new JSONArray("[" + json + "]").getString(0);
                         int shade = cssColor(css);
-                        if (shade != Color.TRANSPARENT) paintBars(shade);
+                        if (shade != Color.TRANSPARENT && shade != lastBarColor) paintBars(shade);
                     } catch (Exception ignored) { }
                 });
             }
-            ui.postDelayed(this, 3000);
+            ui.postDelayed(this, 10000);
         }
     };
 
@@ -463,6 +464,7 @@ public final class MainActivity extends Activity {
     }
 
     private void paintBars(int value) {
+        lastBarColor = value;
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.setStatusBarColor(value);

@@ -42,22 +42,23 @@ jobs:
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.MODIFY_AUDIO_SETTINGS'"
           test "$(printf '%s\n' "$PERMISSIONS" | grep -c '^uses-permission:')" -eq 3
           mkdir -p artifacts
-          cp "$APK" artifacts/Claude-Standalone-v3.0.8.apk
-          sha256sum artifacts/Claude-Standalone-v3.0.8.apk
+          cp "$APK" artifacts/Claude-Standalone-v3.0.9.apk
+          sha256sum artifacts/Claude-Standalone-v3.0.9.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-standalone-v3.0.8
-          path: artifacts/Claude-Standalone-v3.0.8.apk
+          name: claude-standalone-v3.0.9
+          path: artifacts/Claude-Standalone-v3.0.9.apk
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.8
-          name: Standalone Claude v3.0.8
-          files: artifacts/Claude-Standalone-v3.0.8.apk
+          tag_name: v3.0.9
+          name: Standalone Claude v3.0.9
+          files: artifacts/Claude-Standalone-v3.0.9.apk
           body: |
             Claude remains in its own WebView. External HTTPS authorization links offer in-app, system browser, and copy options.
             INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
             External pages already open inside the app provide browser and copy actions.
             Claude's chat composer tries Enter-to-send while preserving IME composition and Shift+Enter newline.
+            Avoid full-document mutation scans during streaming and reduce system-bar polling.
             Google OAuth in embedded WebView depends on Google's policy.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
