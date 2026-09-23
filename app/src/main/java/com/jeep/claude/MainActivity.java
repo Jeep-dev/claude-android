@@ -36,6 +36,9 @@ import android.widget.ProgressBar;
 
 import org.json.JSONArray;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Locale;
@@ -60,6 +63,7 @@ public final class MainActivity extends Activity {
     // Exact hosts approved by the user for this Activity; never approve an entire suffix.
     private final Set<String> approvedHosts = new HashSet<>();
     private AlertDialog navigationDialog;
+    private String sendEnterScript;
 
     private final Runnable refreshColor = new Runnable() {
         @Override public void run() {
@@ -225,6 +229,22 @@ public final class MainActivity extends Activity {
         navigationDialog.show();
     }
 
+    private void installSendEnter(WebView view) {
+        if (sendEnterScript == null) {
+            try (InputStream input = getAssets().open("claude-send-enter.js");
+                    ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096];
+                int size;
+                while ((size = input.read(buffer)) != -1) output.write(buffer, 0, size);
+                sendEnterScript = output.toString(StandardCharsets.UTF_8.name());
+            } catch (Exception e) {
+                Log.w("ClaudeSendEnter", "Could not load keyboard behavior", e);
+                return;
+            }
+        }
+        view.evaluateJavascript(sendEnterScript, null);
+    }
+
     private void updatePageActions() {
         if (pageActions == null) return;
         WebView current = auxiliary != null && overlay.getVisibility() == View.VISIBLE
@@ -277,6 +297,7 @@ public final class MainActivity extends Activity {
 
         @Override public void onPageFinished(WebView view, String url) {
             updatePageActions();
+            if (!secondary && claudeOrigin(Uri.parse(url))) installSendEnter(view);
             if (!secondary) {
                 loading.setVisibility(View.GONE);
                 ui.removeCallbacks(refreshColor);
