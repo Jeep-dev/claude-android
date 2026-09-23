@@ -5,7 +5,9 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Message;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -13,17 +15,26 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
+import java.util.Collections;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String CLAUDE_URL = "https://claude.ai";
+    // Standard Mobile Chrome UA without WebView indicators
+    private static final String CHROME_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36";
+
     private WebView webView;
+    private WebView popupWebView;
+    private FrameLayout popupContainer;
     private SwipeRefreshLayout swipeRefresh;
     private LinearProgressIndicator progressBar;
 
@@ -37,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.webView);
+        popupContainer = findViewById(R.id.popupContainer);
         swipeRefresh = findViewById(R.id.swipeRefresh);
         progressBar = findViewById(R.id.progressBar);
 
@@ -47,9 +59,8 @@ public class MainActivity extends AppCompatActivity {
         swipeRefresh.setColorSchemeResources(R.color.primary);
         swipeRefresh.setOnRefreshListener(() -> webView.reload());
 
-        // Swipe refresh should only trigger when WebView is scrolled to top
         webView.getViewTreeObserver().addOnScrollChangedListener(() -> {
-            swipeRefresh.setEnabled(webView.getScrollY() == 0);
+            swipeRefresh.setEnabled(webView.getScrollY() == 0 && popupContainer.getVisibility() != View.VISIBLE);
         });
 
         if (savedInstanceState != null) {
@@ -84,8 +95,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void initWebView() {
-        WebSettings settings = webView.getSettings();
+    private void applyCommonSettings(WebSettings settings) {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
@@ -95,17 +105,22 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadsImagesAutomatically(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
 
-        // Security: Disallow local file system access, only allow mediated content
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
 
-        // Bypass Google OAuth "disallowed_useragent" restriction
-        String defaultUa = settings.getUserAgentString();
-        String customUa = defaultUa.replace("; wv", "")
-                                   .replaceAll("Version/[0-9.]+", "");
-        settings.setUserAgentString(customUa);
+        // Disguise as standard Google Chrome browser
+        settings.setUserAgentString(CHROME_UA);
 
-        // Cookie management
+        // Remove X-Requested-With header to bypass Google OAuth disallowed_useragent detection
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void initWebView() {
+        applyCommonSettings(webView.getSettings());
+
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
@@ -114,16 +129,9 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                // Stay inside WebView for Claude, Anthropic and Google Auth
-                if (url.startsWith("https://claude.ai") ||
-                    url.startsWith("https://auth.anthropic.com") ||
-                    url.startsWith("https://accounts.google.com") ||
-                    url.contains("anthropic.com") ||
-                    url.contains("google.com")) {
+                if (isInternalOrAuthUrl(url)) {
                     return false;
                 }
-
-                // External links open in default browser
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     startActivity(intent);
@@ -150,11 +158,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
                 progressBar.setProgress(newProgress);
-                if (newProgress >= 100) {
-                    progressBar.setVisibility(View.GONE);
-                } else {
-                    progressBar.setVisibility(View.VISIBLE);
-                }
+                progressBar.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
             }
 
             @Override
@@ -175,14 +179,109 @@ public class MainActivity extends AppCompatActivity {
                 }
                 return true;
             }
+
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                openPopupWindow(resultMsg);
+                return true;
+            }
         });
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void openPopupWindow(Message resultMsg) {
+        closePopup();
+
+        popupWebView = new WebView(MainActivity.this);
+        applyCommonSettings(popupWebView.getSettings());
+
+        CookieManager.getInstance().setAcceptThirdPartyCookies(popupWebView, true);
+
+        popupContainer.removeAllViews();
+        popupContainer.addView(popupWebView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        popupContainer.setVisibility(View.VISIBLE);
+
+        popupWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                progressBar.setProgress(newProgress);
+                progressBar.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
+            }
+
+            @Override
+            public void onCloseWindow(WebView window) {
+                closePopup();
+                webView.reload();
+            }
+        });
+
+        popupWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (isInternalOrAuthUrl(url)) {
+                    return false;
+                }
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    startActivity(intent);
+                } catch (Exception ignored) {}
+                closePopup();
+                return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                CookieManager.getInstance().flush();
+                // If OAuth finished and redirected back to claude.ai
+                if (url.startsWith("https://claude.ai") && !url.contains("/login")) {
+                    closePopup();
+                    webView.loadUrl(url);
+                }
+            }
+        });
+
+        WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+        transport.setWebView(popupWebView);
+        resultMsg.sendToTarget();
+    }
+
+    private void closePopup() {
+        if (popupWebView != null) {
+            popupContainer.removeView(popupWebView);
+            popupWebView.destroy();
+            popupWebView = null;
+        }
+        popupContainer.setVisibility(View.GONE);
+        progressBar.setVisibility(View.GONE);
+        CookieManager.getInstance().flush();
+    }
+
+    private boolean isInternalOrAuthUrl(String url) {
+        if (url == null) return false;
+        return url.startsWith("https://claude.ai") ||
+               url.startsWith("https://auth.anthropic.com") ||
+               url.startsWith("https://accounts.google.com") ||
+               url.startsWith("https://myaccount.google.com") ||
+               url.contains("anthropic.com") ||
+               url.contains("google.com");
     }
 
     private void initBackNavigation() {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                // 不响应 WebView 网页路由回退，侧滑返回直接退出/返回桌面，保持原生 App 手感
+                // If Google login popup is open, back closes the popup
+                if (popupContainer.getVisibility() == View.VISIBLE) {
+                    if (popupWebView != null && popupWebView.canGoBack()) {
+                        popupWebView.goBack();
+                    } else {
+                        closePopup();
+                    }
+                    return;
+                }
+                // Otherwise exit directly to home screen
                 moveTaskToBack(true);
             }
         });
@@ -195,8 +294,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        webView.saveState(outState);
+    protected void onDestroy() {
+        closePopup();
+        super.onDestroy();
     }
 }
