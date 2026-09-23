@@ -3,11 +3,14 @@ package com.jeep.claude;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Message;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -20,6 +23,8 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
@@ -31,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String CLAUDE_URL = "https://claude.ai";
     // Standard Mobile Chrome UA without WebView indicators
     private static final String CHROME_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36";
+    private static final int DEFAULT_BG_COLOR = Color.parseColor("#FAF9F5");
 
     private WebView webView;
     private WebView popupWebView;
@@ -46,6 +52,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        updateSystemBarsColor(DEFAULT_BG_COLOR);
 
         webView = findViewById(R.id.webView);
         popupContainer = findViewById(R.id.popupContainer);
@@ -68,6 +76,65 @@ public class MainActivity extends AppCompatActivity {
         } else {
             webView.loadUrl(CLAUDE_URL);
         }
+    }
+
+    private void updateSystemBarsColor(int color) {
+        Window window = getWindow();
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(color);
+        window.setNavigationBarColor(color);
+
+        boolean isLight = isColorLight(color);
+        WindowInsetsControllerCompat insetsController = WindowCompat.getInsetsController(window, window.getDecorView());
+        if (insetsController != null) {
+            insetsController.setAppearanceLightStatusBars(isLight);
+            insetsController.setAppearanceLightNavigationBars(isLight);
+        }
+    }
+
+    private boolean isColorLight(int color) {
+        double luminance = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255;
+        return luminance > 0.5;
+    }
+
+    private void syncThemeColorFromWeb() {
+        if (webView == null) return;
+        String js = "(function() {" +
+                "  var meta = document.querySelector('meta[name=\"theme-color\"]');" +
+                "  if (meta && meta.content) return meta.content;" +
+                "  var bg = window.getComputedStyle(document.body).backgroundColor;" +
+                "  return bg || '';" +
+                "})();";
+        webView.evaluateJavascript(js, value -> {
+            if (value == null || value.equals("null") || value.isEmpty()) return;
+            parseAndApplyColor(value);
+        });
+    }
+
+    private void parseAndApplyColor(String colorStr) {
+        try {
+            colorStr = colorStr.replace("\"", "").trim();
+            if (colorStr.isEmpty()) return;
+            int color;
+            if (colorStr.startsWith("#")) {
+                color = Color.parseColor(colorStr);
+            } else if (colorStr.startsWith("rgb")) {
+                String clean = colorStr.replaceAll("[^0-9,]", "");
+                String[] parts = clean.split(",");
+                if (parts.length >= 3) {
+                    int r = Integer.parseInt(parts[0].trim());
+                    int g = Integer.parseInt(parts[1].trim());
+                    int b = Integer.parseInt(parts[2].trim());
+                    color = Color.rgb(r, g, b);
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+            updateSystemBarsColor(color);
+            webView.setBackgroundColor(color);
+        } catch (Exception ignored) {}
     }
 
     private void initFileChooser() {
@@ -120,6 +187,7 @@ public class MainActivity extends AppCompatActivity {
     @SuppressLint("SetJavaScriptEnabled")
     private void initWebView() {
         applyCommonSettings(webView.getSettings());
+        webView.setBackgroundColor(DEFAULT_BG_COLOR);
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -151,10 +219,17 @@ public class MainActivity extends AppCompatActivity {
                 progressBar.setVisibility(View.GONE);
                 swipeRefresh.setRefreshing(false);
                 CookieManager.getInstance().flush();
+                syncThemeColorFromWeb();
             }
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onReceivedThemeColor(WebView view, int color) {
+                updateSystemBarsColor(color);
+                webView.setBackgroundColor(color);
+            }
+
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
                 progressBar.setProgress(newProgress);
