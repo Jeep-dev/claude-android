@@ -225,12 +225,6 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public void onReceivedThemeColor(WebView view, int color) {
-                updateSystemBarsColor(color);
-                webView.setBackgroundColor(color);
-            }
-
-            @Override
             public void onProgressChanged(WebView view, int newProgress) {
                 progressBar.setProgress(newProgress);
                 progressBar.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
