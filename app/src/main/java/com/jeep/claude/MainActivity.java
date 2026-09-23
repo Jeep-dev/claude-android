@@ -214,15 +214,12 @@ public final class MainActivity extends Activity {
                     .create();
         } else {
             navigationDialog = new AlertDialog.Builder(this)
-                    .setMessage(getString(R.string.external_link, destination.toString()))
-                    .setItems(new String[]{getString(R.string.continue_in_app),
-                            getString(R.string.open_browser), getString(R.string.copy),
-                            getString(android.R.string.cancel)}, (d, which) -> {
-                        if (which == 0) {
-                            approvedHosts.add(destination.getHost().toLowerCase(Locale.ROOT));
-                            if (view == site || view == auxiliary) view.loadUrl(destination.toString());
-                        } else if (which == 1) openBrowser(destination);
-                        else if (which == 2) copyLink(destination);
+                    .setMessage(getString(R.string.external_link, destination.getHost()))
+                    .setPositiveButton(R.string.open_browser, (d, which) -> openBrowser(destination))
+                    .setNeutralButton(R.string.copy, (d, which) -> copyLink(destination))
+                    .setNegativeButton(R.string.continue_in_app, (d, which) -> {
+                        approvedHosts.add(destination.getHost().toLowerCase(Locale.ROOT));
+                        if (view == site || view == auxiliary) view.loadUrl(destination.toString());
                     }).create();
         }
         navigationDialog.show();
@@ -245,12 +242,11 @@ public final class MainActivity extends Activity {
         Uri destination = Uri.parse(url);
         if (!secureWebLink(destination)) return;
         new AlertDialog.Builder(this)
-                .setMessage(destination.toString())
-                .setItems(new String[]{getString(R.string.open_browser), getString(R.string.copy),
-                        getString(android.R.string.cancel)}, (d, which) -> {
-                    if (which == 0) openBrowser(destination);
-                    else if (which == 1) copyLink(destination);
-                }).show();
+                .setMessage(getString(R.string.current_page, destination.getHost()))
+                .setPositiveButton(R.string.open_browser, (d, which) -> openBrowser(destination))
+                .setNeutralButton(R.string.copy, (d, which) -> copyLink(destination))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private final class Guard extends WebViewClient {

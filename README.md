@@ -1,4 +1,4 @@
-# Claude standalone Android wrapper (v3.0.6)
+# Claude standalone Android wrapper (v3.0.7)
 
 Fresh Android project. Runs `https://claude.ai/` in an in-app Android WebView. Claude itself stays inside the WebView; external authorization links can optionally be opened in the system browser after user confirmation. Requires the OS-provided Android System WebView renderer (part of Android; not bundled into this APK).
 
@@ -9,4 +9,4 @@ Fresh Android project. Runs `https://claude.ai/` in an in-app Android WebView. C
 - Allows HTTPS Claude/Anthropic and Google top-level pages in the WebView, including Google sign-in popups. Third-party cookies are enabled for OAuth. The app no longer blocks Google login itself; however Google may return `403 disallowed_useragent` because it rejects embedded WebViews. This is a Google policy restriction, not something the app can guarantee to overcome. The app does not spoof its UA. User-confirmed external authorization links can launch the system browser; completing OAuth back into Claude's separate WebView profile is not guaranteed.
 - Network routing, DNS, IP, time zone and WebView fingerprint are controlled by device/network settings, **not** by this app. No claim of ban prevention.
 
-GitHub Actions produces a signed release APK at `v3.0.6`. Signing secrets use the same local keystore as the previous installed v2 so upgrades don't require deletion; no old application code, resource, or runtime data is needed. The source is newly written. The signing keystore is stored privately outside the repository.
+GitHub Actions produces a signed release APK at `v3.0.7`. Signing secrets use the same local keystore as the previous installed v2 so upgrades don't require deletion; no old application code, resource, or runtime data is needed. The source is newly written. The signing keystore is stored privately outside the repository.
