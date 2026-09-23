@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Requested at runtime only when Claude asks to record a voice message. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="false"

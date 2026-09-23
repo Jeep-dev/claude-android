@@ -1,6 +1,8 @@
 package com.jeep.claude;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.pm.PackageManager;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
@@ -40,6 +42,7 @@ public final class MainActivity extends Activity {
     private static final String START_PAGE = "https://claude.ai/";
     private static final int CREAM = Color.rgb(250, 249, 245);
     private static final int PICK_FILE = 60;
+    private static final int ASK_MIC = 61;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private FrameLayout screen;
@@ -48,6 +51,7 @@ public final class MainActivity extends Activity {
     private WebView site;
     private WebView auxiliary;
     private ValueCallback<Uri[]> pickedFiles;
+    private PermissionRequest pendingMic;
     private boolean inForeground;
 
     private final Runnable refreshColor = new Runnable() {
@@ -136,6 +140,14 @@ public final class MainActivity extends Activity {
                 || google(uri);
     }
 
+    private static boolean claudeOrigin(Uri uri) {
+        if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())
+                || (uri.getPort() != -1 && uri.getPort() != 443)) return false;
+        String host = uri.getHost();
+        return host != null && (host.equalsIgnoreCase("claude.ai")
+                || host.toLowerCase(Locale.ROOT).endsWith(".claude.ai"));
+    }
+
     private static boolean google(Uri uri) {
         String host = uri.getHost();
         if (host == null) return false;
@@ -198,7 +210,32 @@ public final class MainActivity extends Activity {
             loading.setVisibility(percent == 100 ? View.GONE : View.VISIBLE);
         }
 
-        @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
+        @Override public void onPermissionRequest(PermissionRequest request) {
+            // Only the Claude page may request audio. Never grant camera, video,
+            // MIDI or future WebView permissions implicitly.
+            Uri origin = request.getOrigin();
+            String current = site == null ? null : site.getUrl();
+            String[] resources = request.getResources();
+            boolean audioOnly = resources.length == 1
+                    && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resources[0]);
+            if (!inForeground || current == null || !claudeOrigin(Uri.parse(current))
+                    || !claudeOrigin(origin) || !audioOnly) {
+                request.deny();
+                return;
+            }
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED) {
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                if (pendingMic != null) pendingMic.deny();
+                pendingMic = request;
+                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, ASK_MIC);
+            }
+        }
+
+        @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+            if (pendingMic == request) pendingMic = null;
+        }
 
         @Override public void onGeolocationPermissionsShowPrompt(
                 String origin, GeolocationPermissions.Callback callback) {
@@ -267,6 +304,19 @@ public final class MainActivity extends Activity {
         }
         if (overlay != null) overlay.setVisibility(View.GONE);
         CookieManager.getInstance().flush();
+    }
+
+    @Override public void onRequestPermissionsResult(int code, String[] permissions,
+            int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code != ASK_MIC || pendingMic == null) return;
+        PermissionRequest request = pendingMic;
+        pendingMic = null;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+        } else {
+            request.deny();
+        }
     }
 
     @Override protected void onActivityResult(int request, int outcome, Intent intent) {
@@ -341,6 +391,10 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         ui.removeCallbacks(refreshColor);
         if (pickedFiles != null) pickedFiles.onReceiveValue(null);
+        if (pendingMic != null) {
+            pendingMic.deny();
+            pendingMic = null;
+        }
         closeWindow();
         if (site != null) {
             screen.removeView(site);
