@@ -3,6 +3,9 @@
     <string name="close">关闭</string>
     <string name="external_link">即将离开 Claude 官方网站，在本应用内打开外部网页：\n%1$s\n\n仅在你信任此链接时继续；外部网站有自己的隐私与登录规则。</string>
     <string name="unsupported_link">此链接不是标准 HTTPS 网页，无法在应用内打开：\n%1$s\n\n可以复制链接。</string>
-    <string name="continue_in_app">继续打开</string>
+    <string name="continue_in_app">在应用内打开</string>
+    <string name="open_browser">在浏览器打开</string>
+    <string name="link_actions">当前网页链接操作</string>
+    <string name="no_browser">没有找到可打开的浏览器，链接已复制。</string>
     <string name="copy">复制链接</string>
 </resources>

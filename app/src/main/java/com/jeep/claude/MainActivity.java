@@ -53,6 +53,7 @@ public final class MainActivity extends Activity {
     private ProgressBar loading;
     private WebView site;
     private WebView auxiliary;
+    private Button pageActions;
     private ValueCallback<Uri[]> pickedFiles;
     private PermissionRequest pendingMic;
     private boolean inForeground;
@@ -105,9 +106,22 @@ public final class MainActivity extends Activity {
         FrameLayout.LayoutParams closePosition = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
         overlay.addView(close, closePosition);
+
+        // Available even after an external authorization page has already opened.
+        pageActions = new Button(this);
+        pageActions.setText("⋮");
+        pageActions.setContentDescription(getString(R.string.link_actions));
+        pageActions.setMinWidth(0);
+        pageActions.setMinimumWidth(0);
+        pageActions.setVisibility(View.GONE);
+        pageActions.setOnClickListener(v -> showCurrentPageActions());
+        FrameLayout.LayoutParams actionPosition = new FrameLayout.LayoutParams(
+                dp(48), dp(48), Gravity.TOP | Gravity.START);
+        screen.addView(pageActions, actionPosition);
         setContentView(screen);
 
         if (saved == null || site.restoreState(saved) == null) site.loadUrl(START_PAGE);
+        ui.post(this::updatePageActions);
     }
 
     private int dp(int pixels) {
@@ -177,6 +191,19 @@ public final class MainActivity extends Activity {
         board.setPrimaryClip(ClipData.newPlainText("URL", destination.toString()));
     }
 
+    private void openBrowser(Uri destination) {
+        if (!secureWebLink(destination)) return;
+        Intent browser = new Intent(Intent.ACTION_VIEW, destination);
+        browser.addCategory(Intent.CATEGORY_BROWSABLE);
+        try {
+            startActivity(browser);
+        } catch (Exception e) {
+            copyLink(destination);
+            new AlertDialog.Builder(this).setMessage(R.string.no_browser)
+                    .setPositiveButton(android.R.string.ok, null).show();
+        }
+    }
+
     private void confirmNavigation(WebView view, Uri destination) {
         if (navigationDialog != null && navigationDialog.isShowing()) return;
         if (!secureWebLink(destination)) {
@@ -188,14 +215,42 @@ public final class MainActivity extends Activity {
         } else {
             navigationDialog = new AlertDialog.Builder(this)
                     .setMessage(getString(R.string.external_link, destination.toString()))
-                    .setPositiveButton(R.string.continue_in_app, (d, which) -> {
-                        approvedHosts.add(destination.getHost().toLowerCase(Locale.ROOT));
-                        if (view == site || view == auxiliary) view.loadUrl(destination.toString());
-                    })
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .create();
+                    .setItems(new String[]{getString(R.string.continue_in_app),
+                            getString(R.string.open_browser), getString(R.string.copy),
+                            getString(android.R.string.cancel)}, (d, which) -> {
+                        if (which == 0) {
+                            approvedHosts.add(destination.getHost().toLowerCase(Locale.ROOT));
+                            if (view == site || view == auxiliary) view.loadUrl(destination.toString());
+                        } else if (which == 1) openBrowser(destination);
+                        else if (which == 2) copyLink(destination);
+                    }).create();
         }
         navigationDialog.show();
+    }
+
+    private void updatePageActions() {
+        if (pageActions == null) return;
+        WebView current = auxiliary != null && overlay.getVisibility() == View.VISIBLE
+                ? auxiliary : site;
+        String url = current == null ? null : current.getUrl();
+        Uri uri = url == null ? null : Uri.parse(url);
+        pageActions.setVisibility(secureWebLink(uri) && !allowed(uri) ? View.VISIBLE : View.GONE);
+    }
+
+    private void showCurrentPageActions() {
+        WebView current = auxiliary != null && overlay.getVisibility() == View.VISIBLE
+                ? auxiliary : site;
+        String url = current == null ? null : current.getUrl();
+        if (url == null) return;
+        Uri destination = Uri.parse(url);
+        if (!secureWebLink(destination)) return;
+        new AlertDialog.Builder(this)
+                .setMessage(destination.toString())
+                .setItems(new String[]{getString(R.string.open_browser), getString(R.string.copy),
+                        getString(android.R.string.cancel)}, (d, which) -> {
+                    if (which == 0) openBrowser(destination);
+                    else if (which == 1) copyLink(destination);
+                }).show();
     }
 
     private final class Guard extends WebViewClient {
@@ -225,6 +280,7 @@ public final class MainActivity extends Activity {
         }
 
         @Override public void onPageFinished(WebView view, String url) {
+            updatePageActions();
             if (!secondary) {
                 loading.setVisibility(View.GONE);
                 ui.removeCallbacks(refreshColor);
@@ -321,6 +377,7 @@ public final class MainActivity extends Activity {
             configure(auxiliary, true);
             overlay.addView(auxiliary, 0, new FrameLayout.LayoutParams(-1, -1));
             overlay.setVisibility(View.VISIBLE);
+            updatePageActions();
             ((WebView.WebViewTransport) result.obj).setWebView(auxiliary);
             result.sendToTarget();
             return true;
@@ -340,6 +397,7 @@ public final class MainActivity extends Activity {
             auxiliary = null;
         }
         if (overlay != null) overlay.setVisibility(View.GONE);
+        updatePageActions();
         CookieManager.getInstance().flush();
     }
 
