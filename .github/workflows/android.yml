@@ -78,7 +78,7 @@ jobs:
           body: |
             Claude stays in its own WebView; every non-Claude link asks first, on the current page, and "open in app" uses a separate closable layer with the site shown.
             Enter-to-send also finds the composer's Send button in Claude Code (textarea composers) and no longer skips right after a Latin-keyboard word is committed.
-            Long-pressing Claude's message text uses Android's native text selection instead of fighting Claude's long-press sheet (screen flashing).
+            Long-press + drag on message text only extends the native selection; Claude's long-press drawer no longer opens or gets dragged (screen colour glitch).
             Follows system dark mode and disables forced darkening (fixes light edge strips and gradients on Claude's dark page).
             Keyboard no longer pops up by itself on page load, navigation or returning to the app.
             Returning from the background shows the page immediately (rendered page kept while hidden).
