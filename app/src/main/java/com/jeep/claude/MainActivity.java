@@ -24,6 +24,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.ActionMode;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -380,11 +381,11 @@ public final class MainActivity extends Activity {
         overlayHost.setText(secureWebLink(uri) ? host(uri) : "");
     }
 
-    /** Claude-only page behavior: Enter-to-send, composer focus, root background guard. */
+    /** Claude-only page behavior: Enter-to-send and composer focus handling. */
     private String pageScript() {
         if (pageScript == null) {
             StringBuilder script = new StringBuilder();
-            for (String asset : new String[]{"claude-send-enter.js", "claude-background-guard.js"}) {
+            for (String asset : new String[]{"claude-send-enter.js"}) {
                 try (InputStream input = getAssets().open(asset)) {
                     script.append(new String(readAll(input), StandardCharsets.UTF_8)).append(";\n");
                 } catch (Exception e) {
@@ -1047,6 +1048,30 @@ public final class MainActivity extends Activity {
         ui.removeCallbacks(refreshColor);
         CookieManager.getInstance().flush();
         super.onPause();
+    }
+
+    // While text is selected (the selection toolbar is an ActionMode), dragging a handle shows
+    // the system magnifier. On some devices the screen is then composited wrongly: the page's
+    // large solid backgrounds come out black although the DOM colours are unchanged (confirmed
+    // on-device). Rendering the WebViews into their own hardware layer during selection keeps
+    // their output a single texture for the system to composite. Normal rendering resumes
+    // when the selection ends, so scrolling is unaffected.
+    private int selectionModes;
+
+    @Override public void onActionModeStarted(ActionMode mode) {
+        super.onActionModeStarted(mode);
+        if (selectionModes++ == 0) setSelectionLayers(View.LAYER_TYPE_HARDWARE);
+    }
+
+    @Override public void onActionModeFinished(ActionMode mode) {
+        super.onActionModeFinished(mode);
+        if (selectionModes > 0 && --selectionModes == 0) setSelectionLayers(View.LAYER_TYPE_NONE);
+    }
+
+    private void setSelectionLayers(int type) {
+        for (WebView view : new WebView[]{site, auxiliary}) {
+            if (view != null && view.getLayerType() != type) view.setLayerType(type, null);
+        }
     }
 
     @Override public void onBackPressed() {
