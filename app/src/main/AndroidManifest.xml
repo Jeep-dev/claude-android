@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Requested at runtime only when Claude asks to record a voice message. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Chromium WebView needs audio routing access to enumerate/capture mic input. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Keep library manifests from adding permissions. -->
+    <permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
+    <uses-permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
     <application
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="false"
@@ -13,6 +19,8 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/AppTheme">
+        <!-- Do not upload WebView usage metrics to Google. -->
+        <meta-data android:name="android.webkit.WebView.MetricsOptOut" android:value="true" />
         <activity android:name=".MainActivity" android:exported="true"
             android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"

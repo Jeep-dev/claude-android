@@ -1,7 +1,7 @@
 name: Standalone Android APK
 on:
   push:
-    branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: write
@@ -10,6 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check Enter-to-send behavior
+        run: node tests/send-enter.cjs
+      - name: Read version
+        run: |
+          VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" app/build.gradle)
+          test -n "$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -24,8 +31,6 @@ jobs:
           test -n "$ENCODED_KEY"
           printf '%s' "$ENCODED_KEY" | base64 --decode > "$RUNNER_TEMP/app.jks"
           chmod 600 "$RUNNER_TEMP/app.jks"
-      - name: Check Enter-to-send behavior
-        run: node tests/send-enter.cjs
       - name: Build
         env:
           CLAUDE_KEYSTORE_FILE: ${{ runner.temp }}/app.jks
@@ -37,29 +42,43 @@ jobs:
           APK=app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           PERMISSIONS=$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$APK" | grep '^uses-permission:' || true)
+          printf '%s\n' "$PERMISSIONS"
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.INTERNET'"
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.RECORD_AUDIO'"
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.MODIFY_AUDIO_SETTINGS'"
           test "$(printf '%s\n' "$PERMISSIONS" | grep -c '^uses-permission:')" -eq 3
           mkdir -p artifacts
-          cp "$APK" artifacts/Claude-Standalone-v3.0.10.apk
-          sha256sum artifacts/Claude-Standalone-v3.0.10.apk
+          cp "$APK" "artifacts/Claude-Standalone-v$VERSION.apk"
+          sha256sum "artifacts/Claude-Standalone-v$VERSION.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-standalone-v3.0.10
-          path: artifacts/Claude-Standalone-v3.0.10.apk
+          name: claude-standalone-v${{ env.VERSION }}
+          path: artifacts/Claude-Standalone-v${{ env.VERSION }}.apk
+      - name: Check release tag is new
+        id: release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Never replace the APK of an already-published version; bump versionName instead.
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::warning::Release v$VERSION already exists; bump versionName/versionCode to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v2
+        if: steps.release.outputs.publish == 'true'
         with:
-          tag_name: v3.0.10
-          name: Standalone Claude v3.0.10
-          files: artifacts/Claude-Standalone-v3.0.10.apk
+          tag_name: v${{ env.VERSION }}
+          name: Standalone Claude v${{ env.VERSION }}
+          files: artifacts/Claude-Standalone-v${{ env.VERSION }}.apk
           body: |
-            Claude remains in its own WebView. External HTTPS authorization links offer in-app, system browser, and copy options.
+            Claude stays in its own WebView; every non-Claude link asks first, on the current page, and "open in app" uses a separate closable layer with the site shown.
+            Enter-to-send also finds the composer's Send button in Claude Code (textarea composers) and no longer skips right after a Latin-keyboard word is committed.
+            Downloads are saved through the system "save as" screen; file picker no longer greys out accepted files.
+            Privacy: third-party cookies off, X-Requested-With app header off where supported, WebView metrics opt-out.
             INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
-            External pages already open inside the app provide browser and copy actions.
-            Claude's chat composer tries Enter-to-send while preserving IME composition and Shift+Enter newline.
-            Avoid full-document mutation scans during streaming and reduce system-bar polling.
-            Request the highest display refresh mode up to the user's existing system peak, scoped to this Activity.
             Google OAuth in embedded WebView depends on Google's policy.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
