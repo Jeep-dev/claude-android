@@ -96,7 +96,7 @@ public final class MainActivity extends Activity {
     private boolean inForeground;
     private boolean documentStartScript;
     private AlertDialog navigationDialog;
-    private String sendEnterScript;
+    private String pageScript;
     private int lastBarColor = Color.TRANSPARENT;
 
     private final Runnable refreshColor = new Runnable() {
@@ -234,13 +234,13 @@ public final class MainActivity extends Activity {
     private void installDocumentStartScript(WebView view) {
         // Registering before Claude's own scripts lets Enter be handled before the editor sees it.
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return;
-        String script = sendEnterScript();
+        String script = pageScript();
         if (script == null) return;
         try {
             WebViewCompat.addDocumentStartJavaScript(view, script, Collections.singleton("https://claude.ai"));
             documentStartScript = true;
         } catch (Exception e) {
-            Log.w("ClaudeSendEnter", "Falling back to page-finished injection", e);
+            Log.w("ClaudePageScript", "Falling back to page-finished injection", e);
         }
     }
 
@@ -374,15 +374,20 @@ public final class MainActivity extends Activity {
         overlayHost.setText(secureWebLink(uri) ? host(uri) : "");
     }
 
-    private String sendEnterScript() {
-        if (sendEnterScript == null) {
-            try (InputStream input = getAssets().open("claude-send-enter.js")) {
-                sendEnterScript = new String(readAll(input), StandardCharsets.UTF_8);
-            } catch (Exception e) {
-                Log.w("ClaudeSendEnter", "Could not load keyboard behavior", e);
+    /** Claude-only page behavior: Enter-to-send and native long-press text selection. */
+    private String pageScript() {
+        if (pageScript == null) {
+            StringBuilder script = new StringBuilder();
+            for (String asset : new String[]{"claude-send-enter.js", "claude-long-press.js"}) {
+                try (InputStream input = getAssets().open(asset)) {
+                    script.append(new String(readAll(input), StandardCharsets.UTF_8)).append(";\n");
+                } catch (Exception e) {
+                    Log.w("ClaudePageScript", "Could not load " + asset, e);
+                }
             }
+            if (script.length() > 0) pageScript = script.toString();
         }
-        return sendEnterScript;
+        return pageScript;
     }
 
     private static byte[] readAll(InputStream input) throws java.io.IOException {
@@ -478,7 +483,7 @@ public final class MainActivity extends Activity {
         @Override public void onPageFinished(WebView view, String url) {
             if (role == Role.MAIN) {
                 if (!documentStartScript && claudeOrigin(Uri.parse(url))) {
-                    String script = sendEnterScript();
+                    String script = pageScript();
                     if (script != null) view.evaluateJavascript(script, null);
                 }
                 loading.setVisibility(View.GONE);
