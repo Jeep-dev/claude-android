@@ -71,7 +71,6 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final String START_PAGE = "https://claude.ai/";
-    private static final int CREAM = Color.rgb(250, 249, 245);
     private static final int PICK_FILE = 60;
     private static final int ASK_MIC = 61;
     private static final int SAVE_FILE = 62;
@@ -98,6 +97,8 @@ public final class MainActivity extends Activity {
     private AlertDialog navigationDialog;
     private String pageScript;
     private int lastBarColor = Color.TRANSPARENT;
+    // Follows the system light/dark theme (res/values-night).
+    private int paper;
 
     private final Runnable refreshColor = new Runnable() {
         @Override public void run() {
@@ -122,10 +123,16 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        paintBars(CREAM);
+        paper = getColor(R.color.paper);
+        if (Build.VERSION.SDK_INT >= 29) {
+            // Never let the system (or an OEM "dark mode for all apps") recolor the app;
+            // Claude supplies its own dark theme.
+            getWindow().getDecorView().setForceDarkAllowed(false);
+        }
+        paintBars(paper);
         preferFastDisplay();
         screen = new FrameLayout(this);
-        screen.setBackgroundColor(CREAM);
+        screen.setBackgroundColor(paper);
         site = new WebView(this);
         configure(site, new Guard(Role.MAIN));
         installDocumentStartScript(site);
@@ -138,7 +145,7 @@ public final class MainActivity extends Activity {
 
         overlay = new LinearLayout(this);
         overlay.setOrientation(LinearLayout.VERTICAL);
-        overlay.setBackgroundColor(CREAM);
+        overlay.setBackgroundColor(paper);
         overlay.setVisibility(View.GONE);
         overlay.setClickable(true);
         LinearLayout bar = new LinearLayout(this);
@@ -154,7 +161,7 @@ public final class MainActivity extends Activity {
         overlayHost = new TextView(this);
         overlayHost.setSingleLine(true);
         overlayHost.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        overlayHost.setTextColor(Color.rgb(61, 57, 41));
+        overlayHost.setTextColor(getColor(R.color.ink));
         bar.addView(overlayHost, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         Button close = new Button(this);
         close.setText(R.string.close);
@@ -217,11 +224,22 @@ public final class MainActivity extends Activity {
         settings.setGeolocationEnabled(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSafeBrowsingEnabled(true);
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            // Pages pick light/dark from prefers-color-scheme; never invert them algorithmically.
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false);
+        }
+        if (Build.VERSION.SDK_INT >= 29) view.setForceDarkAllowed(false);
+        if (guard.role == Role.MAIN) {
+            // Keep Claude's rastered tiles while the app is in the background (and on
+            // TRIM_MEMORY_BACKGROUND), so returning shows the page at once instead of
+            // re-rasterizing the whole screen. Costs some memory for this one WebView.
+            settings.setOffscreenPreRaster(true);
+        }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
             // Do not tell websites this app's package name via X-Requested-With.
             WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());
         }
-        view.setBackgroundColor(CREAM);
+        view.setBackgroundColor(paper);
         CookieManager.getInstance().setAcceptCookie(true);
         // Sign-in popups are top-level (first-party); cross-site tracking cookies are not needed.
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, false);
@@ -469,7 +487,7 @@ public final class MainActivity extends Activity {
             }
             if (!revealed) reveal(this);
             if (role == Role.MAIN) {
-                paintBars(CREAM);
+                paintBars(paper);
                 loading.setVisibility(View.VISIBLE);
             } else {
                 updateOverlayHost();

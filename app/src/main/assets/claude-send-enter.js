@@ -31,20 +31,28 @@
     return !label && button.getAttribute('type') === 'submit';
   }
 
-  // Walk up from the editor to the nearest container holding exactly one visible send
-  // button. Never guess: stop at ambiguity, at a Stop button, or once another editor appears.
-  function locateSend(editor) {
+  const stopLike = button => stopWords.test(labelOf(button));
+
+  // The composer box: the nearest ancestor of the editor that holds its Send (or, while
+  // streaming, Stop) button. Stops once another visible editor appears.
+  function composerBox(editor) {
     let node = editor.parentElement;
     for (let depth = 0; node && depth < maxDepth; depth++, node = node.parentElement) {
       if (node === document.body || node === document.documentElement) return null;
       if ([...node.querySelectorAll(editorSelector)].filter(visible).length > 1) return null;
       const buttons = [...node.querySelectorAll('button, [role="button"]')].filter(visible);
-      // While Claude is streaming, Stop replaces Send: leave Enter alone.
-      if (buttons.some(button => stopWords.test(labelOf(button)))) return null;
-      const sends = buttons.filter(sendLike);
-      if (sends.length) return sends.length === 1 ? sends[0] : null;
+      if (buttons.some(button => sendLike(button) || stopLike(button))) return { node, buttons };
     }
     return null;
+  }
+
+  // Exactly one visible send button in the composer box. Never guess: nothing when it is
+  // ambiguous or when Stop is showing (Claude is streaming).
+  function locateSend(editor) {
+    const box = composerBox(editor);
+    if (!box || box.buttons.some(stopLike)) return null;
+    const sends = box.buttons.filter(sendLike);
+    return sends.length === 1 ? sends[0] : null;
   }
 
   function ready(button) {
@@ -56,9 +64,53 @@
       editor.setAttribute('enterkeyhint', 'send');
     }
   }
+  // Claude focuses its composer by script on page load, on navigation and when the app
+  // returns from the background, which pops up the soft keyboard. The composer may only take
+  // focus when the user touched it (or its buttons), typed on a hardware keyboard, or the
+  // keyboard is already up for another field.
+  let lastPointer = { time: 0, target: null };
+  let lastKey = 0;
+  window.addEventListener('pointerdown', e => { lastPointer = { time: Date.now(), target: e.target }; }, true);
+  window.addEventListener('keydown', () => { lastKey = Date.now(); }, true);
+
+  const editable = el => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT');
+
+  function composerEditor(el) {
+    if (!isEditor(el)) return false;
+    const box = composerBox(el);
+    // An edit box with only Cancel/Save is not the composer; it may focus itself.
+    return !!box && box.buttons.some(button => sendLike(button) || /\bstop\b|停止/i.test(labelOf(button)));
+  }
+
+  function userWantsFocus(editor, previous) {
+    if (editable(previous)) return true;
+    if (Date.now() - lastKey < 1000) return true;
+    const target = lastPointer.target;
+    if (!target || Date.now() - lastPointer.time > 2000) return false;
+    if (editor.contains(target)) return true;
+    const box = composerBox(editor);
+    return !!box && box.node.contains(target);
+  }
+
+  const nativeFocus = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (options) {
+    if (document.activeElement !== this && composerEditor(this)
+        && !userWantsFocus(this, document.activeElement)) return;
+    return nativeFocus.call(this, options);
+  };
+
   // Do not observe the entire document: Claude streams frequent DOM mutations.
   if (document.activeElement) markEditor(document.activeElement);
-  window.addEventListener('focusin', e => markEditor(e.target), true);
+  window.addEventListener('focusin', e => {
+    const el = e.target;
+    // Focus that bypassed focus() (autofocus, window regaining focus): drop it before the
+    // keyboard is shown.
+    if (composerEditor(el) && !userWantsFocus(el, e.relatedTarget)) {
+      el.blur();
+      return;
+    }
+    markEditor(el);
+  }, true);
 
   function sendIfReady(e) {
     const editor = document.activeElement;

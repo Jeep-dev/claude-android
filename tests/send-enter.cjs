@@ -3,17 +3,24 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const script = fs.readFileSync('app/src/main/assets/claude-send-enter.js', 'utf8');
 
+// Stands in for HTMLElement.prototype; the script wraps its focus().
+class FakeElement {}
+const baseFocus = function () { this.focusCalls++; if (FakeElement.document) FakeElement.document.activeElement = this; };
+
 // Minimal DOM: only the selectors and properties the script uses.
 function element(tag, props = {}, children = []) {
   const attrs = { ...(props.attrs || {}) };
-  const node = {
+  const node = Object.assign(Object.create(FakeElement.prototype), {
     tagName: tag.toUpperCase(), disabled: false, readOnly: false, hidden: false,
-    textContent: '', value: '', clicks: 0, parentElement: null, children,
+    textContent: '', value: '', clicks: 0, focusCalls: 0, blurs: 0, parentElement: null, children,
+    isContentEditable: attrs.contenteditable === 'true',
     ...props,
     getAttribute: name => (name in attrs ? attrs[name] : null),
     setAttribute: (name, value) => { attrs[name] = value; },
     getClientRects: () => (node.hidden ? [] : [1]),
     click: () => { node.clicks++; },
+    blur: () => { node.blurs++; },
+    contains: other => { for (let n = other; n; n = n.parentElement) if (n === node) return true; return false; },
     matches: selector => (selector.includes('textarea') && node.tagName === 'TEXTAREA')
       || (selector.includes('contenteditable') && attrs.contenteditable === 'true'),
     closest: selector => {
@@ -32,7 +39,7 @@ function element(tag, props = {}, children = []) {
       })(node);
       return found;
     },
-  };
+  });
   children.forEach(c => { c.parentElement = node; });
   return node;
 }
@@ -43,24 +50,26 @@ const button = (label, props = {}) => element('button', { attrs: { 'aria-label':
 function test(name, build, action, expected) {
   let blocked = 0;
   const listeners = {};
+  FakeElement.prototype.focus = baseFocus;
   const { editor, extras = {} } = build();
   let root = editor;
   while (root.parentElement) root = root.parentElement;
   const body = element('body', {}, [root]);
   const document = { body, documentElement: {}, activeElement: editor };
-  const window = { addEventListener: (type, handler) => { listeners[type] = handler; } };
+  FakeElement.document = document;
+  const window = { addEventListener: (type, handler) => { (listeners[type] ||= []).push(handler); } };
   window.top = window;
-  const context = { window, document,
+  const context = { window, document, HTMLElement: FakeElement,
     MutationObserver: class { constructor() { throw Error('Do not observe Claude streaming DOM'); } },
   };
   vm.runInNewContext(script, context);
   function emit(type, props = {}) {
     const event = { target: editor, preventDefault: () => blocked++,
       stopImmediatePropagation: () => {}, ...props };
-    listeners[type]?.(event);
+    (listeners[type] || []).forEach(handler => handler(event));
   }
   const sendButtons = body.querySelectorAll('button');
-  action({ emit, editor, document, ...extras });
+  action({ emit, editor, document, body, ...extras });
   const clicks = sendButtons.reduce((sum, b) => sum + b.clicks, 0);
   assert.deepEqual([clicks, blocked], expected, name);
 }
@@ -138,6 +147,7 @@ test('settings textarea with Save button is not affected', () => {
   return { editor };
 }, ({ emit }) => emit('keydown', { key: 'Enter', keyCode: 13 }), [0, 0]);
 test('composer gets send key hint on focus', chat, ({ emit, editor }) => {
+  emit('pointerdown', { target: editor });
   emit('focusin', { target: editor });
   assert.equal(editor.getAttribute('enterkeyhint'), 'send');
 }, [0, 0]);
@@ -145,6 +155,58 @@ test('repeated Enter within 600ms sends once', chat, ({ emit }) => {
   emit('keydown', { key: 'Enter', keyCode: 13 });
   emit('keydown', { key: 'Enter', keyCode: 13 });
 }, [1, 2]);
+
+// Soft keyboard must not pop up by itself.
+test('page load: script focus on composer is ignored', chat, ({ editor, document, body }) => {
+  document.activeElement = body;
+  editor.focus();
+  assert.equal(editor.focusCalls, 0);
+  assert.equal(document.activeElement, body);
+}, [0, 0]);
+test('tapping the composer lets it focus', chat, ({ emit, editor, document, body }) => {
+  document.activeElement = body;
+  emit('pointerdown', { target: editor });
+  editor.focus();
+  assert.equal(editor.focusCalls, 1);
+}, [0, 0]);
+test('tapping Send keeps the composer focusable', chat, ({ emit, editor, document, body, send }) => {
+  document.activeElement = body;
+  emit('pointerdown', { target: send });
+  editor.focus();
+  assert.equal(editor.focusCalls, 1);
+}, [0, 0]);
+test('opening a chat from elsewhere does not focus the composer', () => {
+  const built = chat();
+  let root = built.editor;
+  while (root.parentElement) root = root.parentElement;
+  const sidebarLink = element('a');
+  element('main', {}, [element('nav', {}, [sidebarLink]), root]);
+  built.extras.sidebarLink = sidebarLink;
+  return built;
+}, ({ emit, editor, document, body, sidebarLink }) => {
+  document.activeElement = body;
+  emit('pointerdown', { target: sidebarLink });
+  editor.focus();
+  assert.equal(editor.focusCalls, 0);
+}, [0, 0]);
+test('returning from background: focus without a touch is dropped', chat, ({ emit, editor }) => {
+  emit('focusin', { target: editor, relatedTarget: null });
+  assert.equal(editor.blurs, 1);
+}, [0, 0]);
+test('keyboard already up for another field: focus allowed', chat, ({ emit, editor }) => {
+  const other = element('input');
+  emit('focusin', { target: editor, relatedTarget: other });
+  assert.equal(editor.blurs, 0);
+}, [0, 0]);
+test('edit-message box (Cancel/Save) may focus itself', () => {
+  const editor = element('textarea', { value: 'old message' });
+  element('div', {}, [editor, button('Cancel'), element('button', { textContent: 'Save' })]);
+  return { editor };
+}, ({ editor, document, body }) => {
+  document.activeElement = body;
+  editor.focus();
+  assert.equal(editor.focusCalls, 1);
+}, [0, 0]);
 
 // Not installed in iframes (document-start scripts also run in same-origin frames).
 {
