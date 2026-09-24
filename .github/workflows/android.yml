@@ -13,6 +13,7 @@ jobs:
       - name: Check page scripts
         run: |
           node tests/send-enter.cjs
+          node tests/background-guard.cjs
       - name: Read version
         run: |
           VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" app/build.gradle)
@@ -101,6 +102,7 @@ jobs:
             Keyboard no longer pops up by itself on page load, navigation or returning to the app.
             The window is no longer pinned to a display refresh mode (suspected cause of screen corruption while dragging text-selection handles).
             Returning from the background shows the page immediately: Claude's page is no longer marked hidden, so its rendered content is not evicted and Claude does not refresh on return.
+            Removes an inline pure-black page background set by scripts during text selection; temporary diagnostics box included in this build.
             Downloads are saved through the system "save as" screen; file picker no longer greys out accepted files.
             Privacy: third-party cookies off, X-Requested-With app header off where supported, WebView metrics opt-out.
             INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.

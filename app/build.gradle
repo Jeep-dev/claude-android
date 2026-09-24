@@ -7,8 +7,8 @@ android {
         applicationId 'com.jeep.claude'
         minSdk 26
         targetSdk 34
-        versionCode 21
-        versionName '3.0.18'
+        versionCode 22
+        versionName '3.0.19'
     }
     signingConfigs {
         release {

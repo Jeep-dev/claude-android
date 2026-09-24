@@ -380,11 +380,11 @@ public final class MainActivity extends Activity {
         overlayHost.setText(secureWebLink(uri) ? host(uri) : "");
     }
 
-    /** Claude-only page behavior: Enter-to-send and composer focus handling. */
+    /** Claude-only page behavior: Enter-to-send, composer focus, root background guard. */
     private String pageScript() {
         if (pageScript == null) {
             StringBuilder script = new StringBuilder();
-            for (String asset : new String[]{"claude-send-enter.js"}) {
+            for (String asset : new String[]{"claude-send-enter.js", "claude-background-guard.js"}) {
                 try (InputStream input = getAssets().open(asset)) {
                     script.append(new String(readAll(input), StandardCharsets.UTF_8)).append(";\n");
                 } catch (Exception e) {
