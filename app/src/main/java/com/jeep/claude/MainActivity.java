@@ -31,6 +31,7 @@ import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.MimeTypeMap;
 import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -55,6 +56,7 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -184,9 +186,11 @@ public final class MainActivity extends Activity {
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setSupportMultipleWindows(true);
-        // Google's sign-in widget may create its popup from an asynchronous callback.
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        // Only Claude itself opens popups (e.g. Google sign-in, which may open from an async
+        // callback). In an external/popup layer, target=_blank links and window.open load in
+        // that same layer and still pass through its Guard, instead of silently doing nothing.
+        settings.setSupportMultipleWindows(guard.role == Role.MAIN);
+        settings.setJavaScriptCanOpenWindowsAutomatically(guard.role == Role.MAIN);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setGeolocationEnabled(false);
@@ -283,6 +287,7 @@ public final class MainActivity extends Activity {
 
     /** Every non-Claude navigation stops here first, on the page the user is looking at. */
     private void confirmNavigation(WebView view, Guard guard, Uri destination) {
+        if (isFinishing() || isDestroyed()) return;
         if (navigationDialog != null && navigationDialog.isShowing()) navigationDialog.dismiss();
         boolean[] continued = {false};
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -376,7 +381,7 @@ public final class MainActivity extends Activity {
         return pageScript;
     }
 
-    private static byte[] readAll(InputStream input) throws java.io.IOException {
+    private static byte[] readAll(InputStream input) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
         int size;
@@ -449,7 +454,14 @@ public final class MainActivity extends Activity {
             Uri destination = Uri.parse(url);
             if (!permits(destination)) {
                 view.stopLoading();
-                if (role == Role.MAIN && view.canGoBack()) view.goBack();
+                if (role == Role.MAIN) {
+                    // The request was blocked (blank response); never leave Claude's page on it.
+                    ui.post(() -> {
+                        if (view != site) return;
+                        if (view.canGoBack()) view.goBack();
+                        else view.loadUrl(START_PAGE);
+                    });
+                }
                 confirmNavigation(view, this, destination);
                 return;
             }
@@ -478,8 +490,43 @@ public final class MainActivity extends Activity {
             } else {
                 updateOverlayHost();
             }
-            CookieManager.getInstance().flush();
         }
+
+        // Without this, a crashed or system-killed renderer kills the whole app.
+        @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+            Log.w("ClaudeRenderer", "Renderer gone (crashed=" + detail.didCrash() + ")");
+            if (isFinishing() || isDestroyed()) return true;
+            if (view == site) {
+                recreateSite();
+            } else if (view == auxiliary) {
+                discardWindow();
+            }
+            return true;
+        }
+    }
+
+    /** Replaces a main WebView whose renderer is gone and reopens the Claude page it showed. */
+    private void recreateSite() {
+        String last = site.getUrl();
+        // Requests tied to the dead WebView can no longer be answered.
+        pendingMic = null;
+        if (pickedFiles != null) {
+            try {
+                pickedFiles.onReceiveValue(null);
+            } catch (Exception ignored) { }
+            pickedFiles = null;
+        }
+        if (navigationDialog != null) navigationDialog.dismiss();
+        discardWindow();
+        screen.removeView(site);
+        site.destroy();
+        site = new WebView(this);
+        configure(site, new Guard(Role.MAIN));
+        documentStartScript = false;
+        installDocumentStartScript(site);
+        screen.addView(site, 0, new FrameLayout.LayoutParams(-1, -1));
+        Uri lastUri = last == null ? null : Uri.parse(last);
+        site.loadUrl(claudeOrigin(lastUri) ? last : START_PAGE);
     }
 
     private final class BrowserFeatures extends WebChromeClient {
@@ -635,7 +682,11 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, R.string.download_unsupported, Toast.LENGTH_LONG).show();
             return;
         }
-        cancelDownload();
+        if (pendingDownload != null) {
+            // The previous "save as" screen has not returned yet; do not mix the two up.
+            Toast.makeText(this, R.string.download_busy, Toast.LENGTH_LONG).show();
+            return;
+        }
         String type = mime == null ? "" : mime.split(";")[0].trim().toLowerCase(Locale.ROOT);
         if (scheme.equals("data")) type = dataMime(url);
         if (!type.contains("/")) type = "application/octet-stream";
@@ -705,7 +756,7 @@ public final class MainActivity extends Activity {
         runIo(() -> {
             boolean ok = false;
             try (OutputStream out = getContentResolver().openOutputStream(target, "w")) {
-                if (out == null) throw new java.io.IOException("No output stream");
+                if (out == null) throw new IOException("No output stream");
                 if (download.data()) {
                     out.write(decodeDataUrl(download.source.toString()));
                 } else {
@@ -730,29 +781,39 @@ public final class MainActivity extends Activity {
     }
 
     private static void copyHttps(PendingDownload download, OutputStream out) throws Exception {
-        String url = download.source.toString();
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        try {
-            connection.setConnectTimeout(20000);
-            connection.setReadTimeout(60000);
-            // HttpURLConnection never follows a redirect from https to http.
-            connection.setInstanceFollowRedirects(true);
-            if (download.userAgent != null) connection.setRequestProperty("User-Agent", download.userAgent);
-            // Only the cookies the WebView would send to this exact URL; no Referer.
-            String cookies = CookieManager.getInstance().getCookie(url);
-            if (cookies != null) connection.setRequestProperty("Cookie", cookies);
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300 || !"https".equals(connection.getURL().getProtocol())) {
-                throw new java.io.IOException("HTTP " + status);
+        URL url = new URL(download.source.toString());
+        // Redirects are followed here, not by HttpURLConnection: it would resend the Cookie
+        // header set for the first host (e.g. claude.ai's session) to the redirect target.
+        for (int hop = 0; hop <= 5; hop++) {
+            if (!"https".equals(url.getProtocol())) throw new IOException("Not https: " + url);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            try {
+                connection.setConnectTimeout(20000);
+                connection.setReadTimeout(60000);
+                connection.setInstanceFollowRedirects(false);
+                if (download.userAgent != null) connection.setRequestProperty("User-Agent", download.userAgent);
+                // Only the cookies the WebView would send to this exact URL; no Referer.
+                String cookies = CookieManager.getInstance().getCookie(url.toString());
+                if (cookies != null) connection.setRequestProperty("Cookie", cookies);
+                int status = connection.getResponseCode();
+                if (status >= 300 && status < 400 && status != 304) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null) throw new IOException("Redirect without Location");
+                    url = new URL(url, location);
+                    continue;
+                }
+                if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
+                try (InputStream input = connection.getInputStream()) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int size;
+                    while ((size = input.read(buffer)) != -1) out.write(buffer, 0, size);
+                }
+                return;
+            } finally {
+                connection.disconnect();
             }
-            try (InputStream input = connection.getInputStream()) {
-                byte[] buffer = new byte[64 * 1024];
-                int size;
-                while ((size = input.read(buffer)) != -1) out.write(buffer, 0, size);
-            }
-        } finally {
-            connection.disconnect();
         }
+        throw new IOException("Too many redirects");
     }
 
     /** Output for one blob download; only touched on the single IO thread. */

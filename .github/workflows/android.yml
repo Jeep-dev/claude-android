@@ -26,22 +26,39 @@ jobs:
         with:
           gradle-version: '8.5'
       - name: Restore signing key
+        id: key
         env:
           ENCODED_KEY: ${{ secrets.CLAUDE_KEYSTORE_B64 }}
         run: |
-          test -n "$ENCODED_KEY"
+          if [ -z "$ENCODED_KEY" ]; then
+            # Pull requests from forks get no secrets: build an unsigned debug APK to check it.
+            test "${{ github.event_name }}" = pull_request
+            echo "::notice::No signing key available; building an unsigned debug APK only."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           printf '%s' "$ENCODED_KEY" | base64 --decode > "$RUNNER_TEMP/app.jks"
           chmod 600 "$RUNNER_TEMP/app.jks"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
       - name: Build
         env:
           CLAUDE_KEYSTORE_FILE: ${{ runner.temp }}/app.jks
           CLAUDE_KEYSTORE_PASSWORD: ${{ secrets.CLAUDE_KEYSTORE_PASSWORD }}
           CLAUDE_KEY_PASSWORD: ${{ secrets.CLAUDE_KEY_PASSWORD }}
-        run: gradle --no-daemon :app:assembleRelease
+        run: |
+          if [ "${{ steps.key.outputs.signed }}" = true ]; then
+            gradle --no-daemon :app:assembleRelease
+          else
+            gradle --no-daemon :app:assembleDebug
+          fi
       - name: Check signature and exact permissions
         run: |
-          APK=app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          if [ "${{ steps.key.outputs.signed }}" = true ]; then
+            APK=app/build/outputs/apk/release/app-release.apk
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          else
+            APK=app/build/outputs/apk/debug/app-debug.apk
+          fi
           PERMISSIONS=$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$APK" | grep '^uses-permission:' || true)
           printf '%s\n' "$PERMISSIONS"
           printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.INTERNET'"
@@ -52,12 +69,13 @@ jobs:
           cp "$APK" "artifacts/Claude-Standalone-v$VERSION.apk"
           sha256sum "artifacts/Claude-Standalone-v$VERSION.apk"
       - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.signed == 'true'
         with:
           name: claude-standalone-v${{ env.VERSION }}
           path: artifacts/Claude-Standalone-v${{ env.VERSION }}.apk
       - name: Check release tag is new
         id: release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.key.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -77,7 +95,9 @@ jobs:
           body: |
             Claude stays in its own WebView; every non-Claude link asks first, on the current page, and "open in app" uses a separate closable layer with the site shown.
             Enter-to-send also finds the composer's Send button in Claude Code (textarea composers) and no longer skips right after a Latin-keyboard word is committed.
-            Follows system dark mode and disables forced darkening (fixes light edge strips and gradients on Claude's dark page).
+            Follows the system light/dark theme; forced/algorithmic darkening of pages is disabled.
+            A crashed or system-killed page renderer no longer takes the whole app down; Claude is reopened.
+            Downloads follow redirects themselves so claude.ai cookies are never sent to another host.
             Keyboard no longer pops up by itself on page load, navigation or returning to the app.
             The window is no longer pinned to a display refresh mode (suspected cause of screen corruption while dragging text-selection handles).
             Returning from the background shows the page immediately (rendered page kept while hidden).
