@@ -7,6 +7,7 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -133,7 +134,7 @@ public final class MainActivity extends Activity {
         paintBars(paper);
         screen = new FrameLayout(this);
         screen.setBackgroundColor(paper);
-        site = new WebView(this);
+        site = new ClaudeWebView(this);
         configure(site, new Guard(Role.MAIN));
         installDocumentStartScript(site);
         screen.addView(site, new FrameLayout.LayoutParams(-1, -1));
@@ -177,6 +178,21 @@ public final class MainActivity extends Activity {
         if (saved == null || site.restoreState(saved) == null) site.loadUrl(START_PAGE);
     }
 
+    /**
+     * The main WebView ignores "window hidden" when the app goes to the background. Otherwise
+     * Chromium marks the page hidden: its compositor evicts every rendered tile and Claude gets
+     * visibilitychange, so returning needs a full re-raster plus Claude's own refresh before
+     * anything shows. Staying "visible" keeps the page ready to draw immediately. Android still
+     * does not draw an invisible window, so no frames are produced while in the background.
+     */
+    private static final class ClaudeWebView extends WebView {
+        ClaudeWebView(Context context) { super(context); }
+
+        @Override protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(View.VISIBLE);
+        }
+    }
+
     private int dp(int pixels) {
         return Math.round(pixels * getResources().getDisplayMetrics().density);
     }
@@ -202,9 +218,8 @@ public final class MainActivity extends Activity {
         }
         if (Build.VERSION.SDK_INT >= 29) view.setForceDarkAllowed(false);
         if (guard.role == Role.MAIN) {
-            // Keep Claude's rastered tiles while the app is in the background (and on
-            // TRIM_MEMORY_BACKGROUND), so returning shows the page at once instead of
-            // re-rasterizing the whole screen. Costs some memory for this one WebView.
+            // Also keep rastered tiles on background memory trims (see ClaudeWebView).
+            // Costs some memory for this one WebView.
             settings.setOffscreenPreRaster(true);
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
@@ -520,7 +535,7 @@ public final class MainActivity extends Activity {
         discardWindow();
         screen.removeView(site);
         site.destroy();
-        site = new WebView(this);
+        site = new ClaudeWebView(this);
         configure(site, new Guard(Role.MAIN));
         documentStartScript = false;
         installDocumentStartScript(site);

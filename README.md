@@ -1,4 +1,4 @@
-# Claude standalone Android wrapper (v3.0.17)
+# Claude standalone Android wrapper (v3.0.18)
 
 Fresh Android project. Runs `https://claude.ai/` in an in-app Android WebView. Claude itself stays inside the WebView; external authorization links can optionally be opened in the system browser after user confirmation. Requires the OS-provided Android System WebView renderer (part of Android; not bundled into this APK).
 
@@ -13,7 +13,7 @@ Fresh Android project. Runs `https://claude.ai/` in an in-app Android WebView. C
 - Cookies: first-party cookies and site storage are kept on disk, so logins (Claude, GitHub, etc.) persist across app restarts and are shared between the main page and the external layer. Only third-party (cross-site, embedded) cookies are blocked.
 - Light/dark: the app theme follows the system (`values-night`), so the WebView reports the matching `prefers-color-scheme` and Claude renders its own dark theme. Forced/algorithmic darkening of pages (including OEM "dark mode for all apps") is disabled. After switching the system theme while the app is open, swipe the app away and reopen it.
 - The soft keyboard does not pop up by itself: Claude's scripted focus of its composer (page load, navigation, returning from the background) is ignored unless the user just touched the composer or its buttons, typed on a hardware keyboard, or the keyboard is already up. The activity also starts with the keyboard hidden.
-- Returning from the background: the main WebView uses offscreen pre-raster, keeping Claude's rendered page while hidden so it is shown immediately instead of being re-rasterized (uses somewhat more memory).
+- Returning from the background: the main WebView ignores "window hidden", so Chromium never marks Claude's page hidden. Otherwise it evicts every rendered tile and Claude refreshes on visibilitychange, and returning waits for a full re-raster. The page is shown immediately instead. Costs: more memory in the background, and Claude's page is not throttled as a hidden page while the process is not frozen (a streaming reply keeps going). Offscreen pre-raster also keeps tiles on background memory trims.
 - If the WebView renderer crashes or is killed by the system, the app is not taken down with it: an external layer is closed, and the Claude page is recreated and reopened (a reload is unavoidable then).
 - Network routing, DNS, IP, time zone and WebView fingerprint are controlled by device/network settings, **not** by this app. No claim of ban prevention.
 
