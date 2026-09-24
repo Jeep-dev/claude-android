@@ -78,9 +78,9 @@ jobs:
           body: |
             Claude stays in its own WebView; every non-Claude link asks first, on the current page, and "open in app" uses a separate closable layer with the site shown.
             Enter-to-send also finds the composer's Send button in Claude Code (textarea composers) and no longer skips right after a Latin-keyboard word is committed.
-            Long-press + drag on message text only extends the native selection; Claude's long-press drawer no longer opens or gets dragged (screen colour glitch).
             Follows system dark mode and disables forced darkening (fixes light edge strips and gradients on Claude's dark page).
             Keyboard no longer pops up by itself on page load, navigation or returning to the app.
+            The window is no longer pinned to a display refresh mode (suspected cause of screen corruption while dragging text-selection handles).
             Returning from the background shows the page immediately (rendered page kept while hidden).
             Downloads are saved through the system "save as" screen; file picker no longer greys out accepted files.
             Privacy: third-party cookies off, X-Requested-With app header off where supported, WebView metrics opt-out.
