@@ -1,7 +1,8 @@
 <resources>
     <string name="app_name">Claude</string>
     <string name="close">关闭</string>
-    <string name="external_link">即将访问外部网站 %1$s。可在浏览器打开、复制链接，或留在本应用内打开。仅在信任该网站时继续。</string>
+    <string name="external_title">即将离开 Claude</string>
+    <string name="external_link">外部网站：%1$s\n\n%2$s\n\n建议在浏览器打开。选择“在应用内打开”会在单独的可关闭页面中打开，不会替换 Claude 页面。</string>
     <string name="current_page">当前外部网站：%1$s。你可以在浏览器打开或复制当前完整链接。</string>
     <string name="unsupported_link">此链接不是标准 HTTPS 网页，无法在应用内打开：\n%1$s\n\n可以复制链接。</string>
     <string name="continue_in_app">在应用内打开</string>
@@ -9,4 +10,11 @@
     <string name="link_actions">当前网页链接操作</string>
     <string name="no_browser">没有找到可打开的浏览器，链接已复制。</string>
     <string name="copy">复制链接</string>
+    <string name="copied">链接已复制</string>
+    <string name="mic_blocked">麦克风权限已被设为“不再询问”，语音输入无法使用。如需使用，请在系统设置的权限中允许麦克风。</string>
+    <string name="open_settings">打开设置</string>
+    <string name="download_done">文件已保存</string>
+    <string name="download_failed">文件保存失败</string>
+    <string name="download_busy">上一个保存位置还没选好，请先完成或取消。</string>
+    <string name="download_unsupported">不支持此下载链接</string>
 </resources>
