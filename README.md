@@ -1,4 +1,4 @@
-# Claude for Android (v4.0.4)
+# Claude for Android (v4.0.5)
 
 A plain Android WebView showing https://claude.ai/, written from scratch. One small page
 script (below), no theme tweaks; apart from keeping the page rendered in the background (below), the
@@ -14,10 +14,13 @@ WebView runs with its default behaviour.
   (offscreen pre-raster) and Chromium is not told the window was hidden, so Claude does not
   refresh. Costs some memory, and a streaming reply keeps running in the background.
 - The keyboard opens only after the page is touched: until then a container holds focus,
-  so Claude focusing its message box on load or on return opens no keyboard. After that,
-  `assets/no-auto-keyboard.js` ignores Claude's scripted focus of a text field (e.g. after
-  switching chats) unless the message box area was touched within the last second or a
-  text field already has focus.
+  so Claude focusing its message box on load or on return opens no keyboard.
+- `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
+  unless that field was just touched or a text field already has focus, so switching chats
+  or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
+  box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
+  confirms it; with no Send button (Claude replying) Enter is a new line. After sending, the
+  keyboard closes. The keyboard shows a Send key for message boxes.
 - Back goes back in the page; at the start it moves the app to the background.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.
 

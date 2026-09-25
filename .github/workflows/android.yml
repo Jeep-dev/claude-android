@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test page script
-        run: node tests/no-auto-keyboard.cjs
+        run: node tests/claude-page.cjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

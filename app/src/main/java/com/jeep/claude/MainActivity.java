@@ -37,7 +37,7 @@ public final class MainActivity extends Activity {
 
     private WebView web;
     private FrameLayout root;
-    private String noAutoKeyboard;
+    private String pageScript;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingMicrophone;
 
@@ -127,19 +127,19 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** assets/no-auto-keyboard.js: Claude's scripted focus of its message box opens no keyboard. */
-    private String noAutoKeyboardScript() {
-        if (noAutoKeyboard == null) {
-            try (InputStream in = getAssets().open("no-auto-keyboard.js")) {
+    /** assets/claude-page.js: keyboard behaviour on claude.ai (no auto keyboard, Enter sends). */
+    private String pageScript() {
+        if (pageScript == null) {
+            try (InputStream in = getAssets().open("claude-page.js")) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buffer = new byte[8192];
                 for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
-                noAutoKeyboard = out.toString(StandardCharsets.UTF_8.name());
+                pageScript = out.toString(StandardCharsets.UTF_8.name());
             } catch (IOException e) {
-                noAutoKeyboard = "";
+                pageScript = "";
             }
         }
-        return noAutoKeyboard;
+        return pageScript;
     }
 
     private final class Client extends WebViewClient {
@@ -156,7 +156,7 @@ public final class MainActivity extends Activity {
             Uri uri = Uri.parse(url);
             String host = uri.getHost();
             if (host != null && (host.equals("claude.ai") || host.endsWith(".claude.ai"))) {
-                view.evaluateJavascript(noAutoKeyboardScript(), null);
+                view.evaluateJavascript(pageScript(), null);
             }
         }
 
