@@ -44,7 +44,7 @@ function setup() {
     MouseEvent: Event, PointerEvent: Event };
   window.top = window;
   const context = {
-    window, document, KeyboardEvent: Event, Date: { now: () => clock },
+    window, document, KeyboardEvent: Event, console: { info() {} }, Date: { now: () => clock },
     setTimeout: (fn, ms) => { timers.push({ at: clock + ms, fn }); return timers.length; },
     clearTimeout: id => { if (timers[id - 1]) timers[id - 1].fn = null; },
     MutationObserver: class {
@@ -93,7 +93,7 @@ const text = page => element('p', page.body);
   page.advance(200);
   page.open({ 'data-vaul-drawer': '', 'data-state': 'open' });
   assert.deepEqual(page.body.events, ['keydown:Escape'], 'drawer opened after selection');
-  page.advance(2000);
+  page.advance(5100);
   assert.ok(!page.watching(), 'stops observing');
 }
 
@@ -117,7 +117,7 @@ const text = page => element('p', page.body);
   assert.deepEqual(page.body.parentElement.events, []);
 }
 
-{ // Drawer opened on release of the long-press, after the watch expired.
+{ // Drawer opened on release of the long-press.
   const page = setup();
   page.touch();
   page.select(text(page));
@@ -125,6 +125,28 @@ const text = page => element('p', page.body);
   page.release();
   page.open();
   assert.deepEqual(page.body.events, ['keydown:Escape'], 'drawer opened on release');
+}
+
+{ // Long handle drag (no page touch events): selection changes keep it armed until release.
+  const page = setup();
+  const node = text(page);
+  page.touch();
+  page.select(node);
+  page.release();
+  for (let i = 1; i <= 8; i++) { page.advance(1000); page.select(node, i); }
+  page.open();
+  assert.deepEqual(page.body.events, ['keydown:Escape'], 'drawer after long handle drag');
+}
+
+{ // Quiet for longer than 5 s: observer stopped, later dialogs untouched.
+  const page = setup();
+  page.touch();
+  page.select(text(page));
+  page.release();
+  page.advance(5100);
+  assert.ok(!page.watching(), 'stops after quiet period');
+  page.open();
+  assert.deepEqual(page.body.events, [], 'dialog after quiet period');
 }
 
 { // Dialog that was open before the touch: untouched.
@@ -156,7 +178,7 @@ const text = page => element('p', page.body);
   const node = text(page);
   page.touch();
   page.select(node);
-  page.advance(5000);
+  page.advance(6000);
   page.touch();
   page.open();
   page.release();
@@ -168,7 +190,7 @@ const text = page => element('p', page.body);
   const node = text(page);
   page.touch();
   page.select(node);
-  page.advance(5000);
+  page.advance(6000);
   page.touch();
   page.open();
   page.select(node, 10);
@@ -178,7 +200,7 @@ const text = page => element('p', page.body);
 { // Dialog opened without any recent touch (e.g. keyboard): untouched.
   const page = setup();
   page.touch();
-  page.advance(5000);
+  page.advance(6000);
   page.open();
   page.select(text(page));
   assert.deepEqual(page.body.events, [], 'no recent touch');

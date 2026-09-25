@@ -36,6 +36,7 @@ import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
+import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -385,7 +386,8 @@ public final class MainActivity extends Activity {
     private String pageScript() {
         if (pageScript == null) {
             StringBuilder script = new StringBuilder();
-            for (String asset : new String[]{"claude-send-enter.js", "claude-selection-guard.js"}) {
+            for (String asset : new String[]{"claude-send-enter.js", "claude-selection-guard.js",
+                    "claude-diagnostics.js"}) {
                 try (InputStream input = getAssets().open(asset)) {
                     script.append(new String(readAll(input), StandardCharsets.UTF_8)).append(";\n");
                 } catch (Exception e) {
@@ -548,6 +550,15 @@ public final class MainActivity extends Activity {
     private final class BrowserFeatures extends WebChromeClient {
         private final Guard guard;
         BrowserFeatures(Guard guard) { this.guard = guard; }
+
+        // TEMPORARY: the selection diagnostics script logs through the console; show only its
+        // lines under their own logcat tag (rish -c 'logcat -d -v raw -s ClaudeDiag').
+        @Override public boolean onConsoleMessage(ConsoleMessage message) {
+            String text = message.message();
+            if (text == null || !text.startsWith("[ClaudeDiag] ")) return super.onConsoleMessage(message);
+            Log.i("ClaudeDiag", text.substring(13));
+            return true;
+        }
 
         @Override public void onProgressChanged(WebView view, int percent) {
             if (guard.role != Role.MAIN) return;
@@ -1060,11 +1071,13 @@ public final class MainActivity extends Activity {
 
     @Override public void onActionModeStarted(ActionMode mode) {
         super.onActionModeStarted(mode);
+        Log.i("ClaudeDiag", "native action mode started type=" + mode.getType());
         if (selectionModes++ == 0) setSelectionLayers(View.LAYER_TYPE_HARDWARE);
     }
 
     @Override public void onActionModeFinished(ActionMode mode) {
         super.onActionModeFinished(mode);
+        Log.i("ClaudeDiag", "native action mode finished");
         if (selectionModes > 0 && --selectionModes == 0) setSelectionLayers(View.LAYER_TYPE_NONE);
     }
 
