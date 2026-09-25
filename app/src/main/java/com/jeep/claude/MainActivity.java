@@ -24,6 +24,11 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 /** Claude in a plain WebView. Other websites open in the system browser. */
 public final class MainActivity extends Activity {
     private static final String HOME = "https://claude.ai/";
@@ -32,6 +37,7 @@ public final class MainActivity extends Activity {
 
     private WebView web;
     private FrameLayout root;
+    private String noAutoKeyboard;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingMicrophone;
 
@@ -121,6 +127,21 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /** assets/no-auto-keyboard.js: Claude's scripted focus of its message box opens no keyboard. */
+    private String noAutoKeyboardScript() {
+        if (noAutoKeyboard == null) {
+            try (InputStream in = getAssets().open("no-auto-keyboard.js")) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
+                noAutoKeyboard = out.toString(StandardCharsets.UTF_8.name());
+            } catch (IOException e) {
+                noAutoKeyboard = "";
+            }
+        }
+        return noAutoKeyboard;
+    }
+
     private final class Client extends WebViewClient {
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             // Embedded frames (e.g. artifact previews) load normally.
@@ -129,6 +150,14 @@ public final class MainActivity extends Activity {
             if (inApp(uri)) return false;
             openOutside(uri);
             return true;
+        }
+
+        @Override public void onPageFinished(WebView view, String url) {
+            Uri uri = Uri.parse(url);
+            String host = uri.getHost();
+            if (host != null && (host.equals("claude.ai") || host.endsWith(".claude.ai"))) {
+                view.evaluateJavascript(noAutoKeyboardScript(), null);
+            }
         }
 
         @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
