@@ -1061,30 +1061,17 @@ public final class MainActivity extends Activity {
         super.onPause();
     }
 
-    // While text is selected (the selection toolbar is an ActionMode), dragging a handle shows
-    // the system magnifier. On some devices the screen is then composited wrongly: the page's
-    // large solid backgrounds come out black although the DOM colours are unchanged (confirmed
-    // on-device). Rendering the WebViews into their own hardware layer during selection keeps
-    // their output a single texture for the system to composite. Normal rendering resumes
-    // when the selection ends, so scrolling is unaffected.
-    private int selectionModes;
-
+    // TEMPORARY diagnostics: when the native selection toolbar (an ActionMode) starts and ends.
+    // WebViews are no longer put into a hardware layer during selection (3.0.20-3.0.22): that
+    // painted a black bar over Claude's composer fade while text was selected.
     @Override public void onActionModeStarted(ActionMode mode) {
         super.onActionModeStarted(mode);
         Log.i("ClaudeDiag", "native action mode started type=" + mode.getType());
-        if (selectionModes++ == 0) setSelectionLayers(View.LAYER_TYPE_HARDWARE);
     }
 
     @Override public void onActionModeFinished(ActionMode mode) {
         super.onActionModeFinished(mode);
         Log.i("ClaudeDiag", "native action mode finished");
-        if (selectionModes > 0 && --selectionModes == 0) setSelectionLayers(View.LAYER_TYPE_NONE);
-    }
-
-    private void setSelectionLayers(int type) {
-        for (WebView view : new WebView[]{site, auxiliary}) {
-            if (view != null && view.getLayerType() != type) view.setLayerType(type, null);
-        }
     }
 
     @Override public void onBackPressed() {

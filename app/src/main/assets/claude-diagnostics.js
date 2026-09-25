@@ -39,6 +39,28 @@
     }
     return describe(hit) + ' bg<' + (el ? describe(el) + ' ' + getComputedStyle(el).backgroundColor : 'none');
   }
+  // Every element stacked at the centre of a screen height, with what could paint it black.
+  function layers(f) {
+    const y = window.innerHeight * f;
+    const stack = document.elementsFromPoint ? document.elementsFromPoint(window.innerWidth / 2, y) : [];
+    log(' stack' + f + ' (' + stack.length + ')');
+    for (const el of stack.slice(0, 6)) {
+      const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const extra = [
+        s.backgroundImage !== 'none' ? 'img=' + s.backgroundImage.slice(0, 50) : '',
+        s.backdropFilter && s.backdropFilter !== 'none' ? 'bdf=' + s.backdropFilter : '',
+        s.filter !== 'none' ? 'flt=' + s.filter.slice(0, 30) : '',
+        s.maskImage && s.maskImage !== 'none' ? 'mask' : '',
+        s.willChange !== 'auto' ? 'wc=' + s.willChange : '',
+        s.opacity !== '1' ? 'op=' + s.opacity : '',
+      ].filter(Boolean).join(' ');
+      log('  ' + describe(el) + ' ' + Math.round(r.top) + '+' + Math.round(r.height) + ' '
+        + s.position + ' bg=' + s.backgroundColor + (extra ? ' ' + extra : ''));
+    }
+  }
+  const focused = () => describe(document.activeElement);
+
   function snapshot(reason) {
     log('snap ' + reason + ' sel=' + selected() + ' vis=' + document.visibilityState
       + ' vh=' + window.innerHeight);
@@ -67,12 +89,21 @@
   window.addEventListener('touchmove', () => { moves++; }, { capture: true, passive: true });
 
   let selectionTimer = 0;
+  let stacked = false;
+  window.addEventListener('focusin', event => log('focus ' + describe(event.target)), true);
   document.addEventListener('selectionchange', () => {
     clearTimeout(selectionTimer);
     selectionTimer = setTimeout(() => {
       const s = document.getSelection();
       const node = s && s.anchorNode;
-      log('selection len=' + selected() + ' in=' + describe(node && node.nodeType === 1 ? node : node && node.parentElement));
+      log('selection len=' + selected() + ' in=' + describe(node && node.nodeType === 1 ? node : node && node.parentElement)
+        + ' focus=' + focused());
+      if (selected() && !stacked) {
+        stacked = true;
+        layers(0.8);
+        layers(0.86);
+      }
+      if (!selected()) stacked = false;
     }, 250);
   });
 
@@ -86,11 +117,15 @@
         for (const node of record.addedNodes) {
           if (node.nodeType !== 1) continue;
           const found = node.matches(DIALOGISH) ? [node] : Array.from(node.querySelectorAll(DIALOGISH));
-          for (const d of found) log('open ' + describe(d) + ' sel=' + selected() + ' ' + rect(d));
+          for (const d of found) {
+            log('open ' + describe(d) + ' sel=' + selected() + ' ' + rect(d));
+            setTimeout(() => log(' then focus=' + focused() + ' sel=' + selected()), 100);
+          }
         }
         for (const node of record.removedNodes) {
           if (node.nodeType === 1 && (node.matches(DIALOGISH) || node.querySelector(DIALOGISH))) {
             log('removed ' + describe(node));
+            setTimeout(() => log(' then focus=' + focused() + ' sel=' + selected()), 100);
           }
         }
       }
