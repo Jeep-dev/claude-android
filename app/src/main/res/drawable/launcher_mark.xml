@@ -1,9 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pixel mascot on a 13 x 8 grid, inside the adaptive-icon safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#00000000" android:strokeColor="#D97757"
-        android:strokeWidth="7" android:strokeLineCap="round"
-        android:pathData="M54,30 L54,42 M54,66 L54,78 M30,54 L42,54 M66,54 L78,54 M37,37 L45,45 M63,63 L71,71 M71,37 L63,45 M45,63 L37,71" />
-    <path android:fillColor="#D97757"
-        android:pathData="M54,43 C60.1,43 65,47.9 65,54 C65,60.1 60.1,65 54,65 C47.9,65 43,60.1 43,54 C43,47.9 47.9,43 54,43 Z" />
+    <path android:fillColor="#D97757" android:pathData="M31.5,34h5v5h-5zM36.5,34h5v5h-5zM41.5,34h5v5h-5zM46.5,34h5v5h-5zM51.5,34h5v5h-5zM56.5,34h5v5h-5zM61.5,34h5v5h-5zM66.5,34h5v5h-5zM71.5,34h5v5h-5zM31.5,39h5v5h-5zM41.5,39h5v5h-5zM46.5,39h5v5h-5zM51.5,39h5v5h-5zM56.5,39h5v5h-5zM61.5,39h5v5h-5zM71.5,39h5v5h-5zM21.5,44h5v5h-5zM26.5,44h5v5h-5zM31.5,44h5v5h-5zM36.5,44h5v5h-5zM41.5,44h5v5h-5zM46.5,44h5v5h-5zM51.5,44h5v5h-5zM56.5,44h5v5h-5zM61.5,44h5v5h-5zM66.5,44h5v5h-5zM71.5,44h5v5h-5zM76.5,44h5v5h-5zM81.5,44h5v5h-5zM21.5,49h5v5h-5zM26.5,49h5v5h-5zM31.5,49h5v5h-5zM36.5,49h5v5h-5zM41.5,49h5v5h-5zM46.5,49h5v5h-5zM51.5,49h5v5h-5zM56.5,49h5v5h-5zM61.5,49h5v5h-5zM66.5,49h5v5h-5zM71.5,49h5v5h-5zM76.5,49h5v5h-5zM81.5,49h5v5h-5zM31.5,54h5v5h-5zM36.5,54h5v5h-5zM41.5,54h5v5h-5zM46.5,54h5v5h-5zM51.5,54h5v5h-5zM56.5,54h5v5h-5zM61.5,54h5v5h-5zM66.5,54h5v5h-5zM71.5,54h5v5h-5zM31.5,59h5v5h-5zM36.5,59h5v5h-5zM41.5,59h5v5h-5zM46.5,59h5v5h-5zM51.5,59h5v5h-5zM56.5,59h5v5h-5zM61.5,59h5v5h-5zM66.5,59h5v5h-5zM71.5,59h5v5h-5zM31.5,64h5v5h-5zM46.5,64h5v5h-5zM56.5,64h5v5h-5zM71.5,64h5v5h-5zM31.5,69h5v5h-5zM46.5,69h5v5h-5zM56.5,69h5v5h-5zM71.5,69h5v5h-5z" />
+    <path android:fillColor="#000000" android:pathData="M36.5,39h5v5h-5zM66.5,39h5v5h-5z" />
 </vector>

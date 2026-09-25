@@ -21,6 +21,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 /** Claude in a plain WebView. Other websites open in the system browser. */
@@ -30,13 +31,20 @@ public final class MainActivity extends Activity {
     private static final int ASK_MICROPHONE = 2;
 
     private WebView web;
+    private FrameLayout root;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingMicrophone;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         web = new KeepVisibleWebView(this);
-        setContentView(web);
+        // The keyboard only opens for the focused view. The container holds focus until the
+        // page is touched, so Claude focusing its message box on its own opens no keyboard.
+        root = new FrameLayout(this);
+        root.setFocusableInTouchMode(true);
+        root.addView(web);
+        setContentView(root);
+        root.requestFocus();
 
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -208,6 +216,8 @@ public final class MainActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        // Also no keyboard of its own when returning to the app.
+        root.requestFocus();
         CookieManager.getInstance().flush();
     }
 
