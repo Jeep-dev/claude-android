@@ -98,7 +98,6 @@ public final class MainActivity extends Activity {
     private AlertDialog navigationDialog;
     private String pageScript;
     private int lastBarColor = Color.TRANSPARENT;
-    // Follows the system light/dark theme (res/values-night).
     private int paper;
 
     private final Runnable refreshColor = new Runnable() {
@@ -125,11 +124,6 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         paper = getColor(R.color.paper);
-        if (Build.VERSION.SDK_INT >= 29) {
-            // Never let the system (or an OEM "dark mode for all apps") recolor the app;
-            // Claude supplies its own dark theme.
-            getWindow().getDecorView().setForceDarkAllowed(false);
-        }
         paintBars(paper);
         screen = new FrameLayout(this);
         screen.setBackgroundColor(paper);
@@ -196,11 +190,6 @@ public final class MainActivity extends Activity {
         settings.setGeolocationEnabled(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSafeBrowsingEnabled(true);
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            // Pages pick light/dark from prefers-color-scheme; never invert them algorithmically.
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false);
-        }
-        if (Build.VERSION.SDK_INT >= 29) view.setForceDarkAllowed(false);
         if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
             // Do not tell websites this app's package name via X-Requested-With.
             WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());

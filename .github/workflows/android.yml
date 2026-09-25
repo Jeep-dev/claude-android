@@ -95,12 +95,11 @@ jobs:
           body: |
             Claude stays in its own WebView; every non-Claude link asks first, on the current page, and "open in app" uses a separate closable layer with the site shown.
             Enter-to-send also finds the composer's Send button in Claude Code (textarea composers) and no longer skips right after a Latin-keyboard word is committed.
-            Follows the system light/dark theme; forced/algorithmic darkening of pages is disabled.
             A crashed or system-killed page renderer no longer takes the whole app down; Claude is reopened.
             Downloads follow redirects themselves so claude.ai cookies are never sent to another host.
             Keyboard no longer pops up by itself on page load, navigation or returning to the app.
             The window is no longer pinned to a display refresh mode (suspected cause of screen corruption while dragging text-selection handles).
-            Text selection: the main WebView uses standard rendering again (no offscreen pre-raster, no forced "visible" window), the likely cause of black/grey screens while selecting text; all selection workarounds are removed.
+            Text selection: the main WebView uses standard rendering again (no offscreen pre-raster, no forced "visible" window, no dark-mode overrides), the likely cause of black/grey screens while selecting text; all selection workarounds are removed.
             Downloads are saved through the system "save as" screen; file picker no longer greys out accepted files.
             Privacy: third-party cookies off, X-Requested-With app header off where supported, WebView metrics opt-out.
             INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
