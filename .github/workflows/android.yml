@@ -13,6 +13,7 @@ jobs:
       - name: Check page scripts
         run: |
           node tests/send-enter.cjs
+          node tests/selection-color.cjs
       - name: Read version
         run: |
           VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" app/build.gradle)
@@ -99,7 +100,7 @@ jobs:
             Downloads follow redirects themselves so claude.ai cookies are never sent to another host.
             Keyboard no longer pops up by itself on page load, navigation or returning to the app.
             The window is no longer pinned to a display refresh mode (suspected cause of screen corruption while dragging text-selection handles).
-            Text selection: the main WebView uses standard rendering again (no offscreen pre-raster, no forced "visible" window, no dark-mode overrides), the likely cause of black/grey screens while selecting text; all selection workarounds are removed.
+            While text is selected, page backgrounds written as CSS color(srgb …) are given the identical rgb() colour, so they no longer turn black.
             Downloads are saved through the system "save as" screen; file picker no longer greys out accepted files.
             Privacy: third-party cookies off, X-Requested-With app header off where supported, WebView metrics opt-out.
             INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
