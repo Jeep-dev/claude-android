@@ -7,7 +7,6 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -24,7 +23,6 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.ActionMode;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -36,7 +34,6 @@ import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
-import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -136,7 +133,7 @@ public final class MainActivity extends Activity {
         paintBars(paper);
         screen = new FrameLayout(this);
         screen.setBackgroundColor(paper);
-        site = new ClaudeWebView(this);
+        site = new WebView(this);
         configure(site, new Guard(Role.MAIN));
         installDocumentStartScript(site);
         screen.addView(site, new FrameLayout.LayoutParams(-1, -1));
@@ -180,21 +177,6 @@ public final class MainActivity extends Activity {
         if (saved == null || site.restoreState(saved) == null) site.loadUrl(START_PAGE);
     }
 
-    /**
-     * The main WebView ignores "window hidden" when the app goes to the background. Otherwise
-     * Chromium marks the page hidden: its compositor evicts every rendered tile and Claude gets
-     * visibilitychange, so returning needs a full re-raster plus Claude's own refresh before
-     * anything shows. Staying "visible" keeps the page ready to draw immediately. Android still
-     * does not draw an invisible window, so no frames are produced while in the background.
-     */
-    private static final class ClaudeWebView extends WebView {
-        ClaudeWebView(Context context) { super(context); }
-
-        @Override protected void onWindowVisibilityChanged(int visibility) {
-            super.onWindowVisibilityChanged(View.VISIBLE);
-        }
-    }
-
     private int dp(int pixels) {
         return Math.round(pixels * getResources().getDisplayMetrics().density);
     }
@@ -219,11 +201,6 @@ public final class MainActivity extends Activity {
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false);
         }
         if (Build.VERSION.SDK_INT >= 29) view.setForceDarkAllowed(false);
-        if (guard.role == Role.MAIN) {
-            // Also keep rastered tiles on background memory trims (see ClaudeWebView).
-            // Costs some memory for this one WebView.
-            settings.setOffscreenPreRaster(true);
-        }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
             // Do not tell websites this app's package name via X-Requested-With.
             WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());
@@ -382,12 +359,11 @@ public final class MainActivity extends Activity {
         overlayHost.setText(secureWebLink(uri) ? host(uri) : "");
     }
 
-    /** Claude-only page behavior: Enter-to-send, composer focus, long-press drawer vs. selection. */
+    /** Claude-only page behavior: Enter-to-send and composer focus handling. */
     private String pageScript() {
         if (pageScript == null) {
             StringBuilder script = new StringBuilder();
-            for (String asset : new String[]{"claude-send-enter.js", "claude-selection-guard.js",
-                    "claude-selection-paint.js", "claude-diagnostics.js"}) {
+            for (String asset : new String[]{"claude-send-enter.js"}) {
                 try (InputStream input = getAssets().open(asset)) {
                     script.append(new String(readAll(input), StandardCharsets.UTF_8)).append(";\n");
                 } catch (Exception e) {
@@ -538,7 +514,7 @@ public final class MainActivity extends Activity {
         discardWindow();
         screen.removeView(site);
         site.destroy();
-        site = new ClaudeWebView(this);
+        site = new WebView(this);
         configure(site, new Guard(Role.MAIN));
         documentStartScript = false;
         installDocumentStartScript(site);
@@ -550,15 +526,6 @@ public final class MainActivity extends Activity {
     private final class BrowserFeatures extends WebChromeClient {
         private final Guard guard;
         BrowserFeatures(Guard guard) { this.guard = guard; }
-
-        // TEMPORARY: the selection diagnostics script logs through the console; show only its
-        // lines under their own logcat tag (rish -c 'logcat -d -v raw -s ClaudeDiag').
-        @Override public boolean onConsoleMessage(ConsoleMessage message) {
-            String text = message.message();
-            if (text == null || !text.startsWith("[ClaudeDiag] ")) return super.onConsoleMessage(message);
-            Log.i("ClaudeDiag", text.substring(13));
-            return true;
-        }
 
         @Override public void onProgressChanged(WebView view, int percent) {
             if (guard.role != Role.MAIN) return;
@@ -1059,19 +1026,6 @@ public final class MainActivity extends Activity {
         ui.removeCallbacks(refreshColor);
         CookieManager.getInstance().flush();
         super.onPause();
-    }
-
-    // TEMPORARY diagnostics: when the native selection toolbar (an ActionMode) starts and ends.
-    // WebViews are no longer put into a hardware layer during selection (3.0.20-3.0.22): that
-    // painted a black bar over Claude's composer fade while text was selected.
-    @Override public void onActionModeStarted(ActionMode mode) {
-        super.onActionModeStarted(mode);
-        Log.i("ClaudeDiag", "native action mode started type=" + mode.getType());
-    }
-
-    @Override public void onActionModeFinished(ActionMode mode) {
-        super.onActionModeFinished(mode);
-        Log.i("ClaudeDiag", "native action mode finished");
     }
 
     @Override public void onBackPressed() {
