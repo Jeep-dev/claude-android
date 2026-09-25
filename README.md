@@ -1,7 +1,8 @@
-# Claude for Android (v4.0.0)
+# Claude for Android (v4.0.1)
 
 A plain Android WebView showing https://claude.ai/, written from scratch. No page scripts,
-no rendering or theme tweaks: the WebView runs with its default behaviour.
+no theme tweaks; apart from keeping the page rendered in the background (below), the
+WebView runs with its default behaviour.
 
 - Claude (`claude.ai`, `*.claude.ai`), Anthropic pages and `accounts.google.com` open in the app;
   every other link opens in the system browser. Embedded frames load normally.
@@ -9,6 +10,9 @@ no rendering or theme tweaks: the WebView runs with its default behaviour.
   starts voice dictation.
 - `https` downloads go to Downloads through the system download manager. Downloads that
   exist only inside the page (`blob:`) are not supported.
+- Returning from the background shows the page at once: rendered content is kept
+  (offscreen pre-raster) and Chromium is not told the window was hidden, so Claude does not
+  refresh. Costs some memory, and a streaming reply keeps running in the background.
 - Back goes back in the page; at the start it moves the app to the background.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.
 

@@ -4,11 +4,13 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
@@ -33,13 +35,15 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        web = new WebView(this);
+        web = new KeepVisibleWebView(this);
         setContentView(web);
 
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
+        // Keep rendered content while the app is in the background, so returning shows it at once.
+        settings.setOffscreenPreRaster(true);
         CookieManager.getInstance().setAcceptCookie(true);
 
         web.setWebViewClient(new Client());
@@ -48,6 +52,19 @@ public final class MainActivity extends Activity {
                 download(url, userAgent, disposition, mimeType));
 
         if (state == null || web.restoreState(state) == null) web.loadUrl(HOME);
+    }
+
+    /**
+     * Chromium is not told when the app goes to the background: otherwise it marks the page
+     * hidden, drops its rendered content and Claude refreshes on return. Android still draws
+     * nothing while the window is not visible.
+     */
+    private static final class KeepVisibleWebView extends WebView {
+        KeepVisibleWebView(Context context) { super(context); }
+
+        @Override protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(View.VISIBLE);
+        }
     }
 
     /** Claude, its sign-in and Anthropic pages stay in the app. */
