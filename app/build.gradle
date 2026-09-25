@@ -4,11 +4,12 @@ android {
     namespace 'com.jeep.claude'
     compileSdk 34
     defaultConfig {
+        // Same application id and signing key as the installed app, so it updates in place.
         applicationId 'com.jeep.claude'
         minSdk 26
         targetSdk 34
-        versionCode 23
-        versionName '3.0.20'
+        versionCode 36
+        versionName '4.0.5'
     }
     signingConfigs {
         release {
@@ -28,9 +29,4 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-}
-
-dependencies {
-    // WebView compatibility APIs: document-start script and X-Requested-With opt-out.
-    implementation 'androidx.webkit:webkit:1.8.0'
 }

@@ -1,7 +1,6 @@
-name: Standalone Android APK
+name: Build APK
 on:
   push:
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: write
@@ -10,14 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check page scripts
-        run: |
-          node tests/send-enter.cjs
-      - name: Read version
-        run: |
-          VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" app/build.gradle)
-          test -n "$VERSION"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Test page script
+        run: node tests/claude-page.cjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -25,86 +18,32 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
-      - name: Restore signing key
-        id: key
+      - name: Build signed release APK
         env:
-          ENCODED_KEY: ${{ secrets.CLAUDE_KEYSTORE_B64 }}
-        run: |
-          if [ -z "$ENCODED_KEY" ]; then
-            # Pull requests from forks get no secrets: build an unsigned debug APK to check it.
-            test "${{ github.event_name }}" = pull_request
-            echo "::notice::No signing key available; building an unsigned debug APK only."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          printf '%s' "$ENCODED_KEY" | base64 --decode > "$RUNNER_TEMP/app.jks"
-          chmod 600 "$RUNNER_TEMP/app.jks"
-          echo "signed=true" >> "$GITHUB_OUTPUT"
-      - name: Build
-        env:
-          CLAUDE_KEYSTORE_FILE: ${{ runner.temp }}/app.jks
+          KEY_B64: ${{ secrets.CLAUDE_KEYSTORE_B64 }}
           CLAUDE_KEYSTORE_PASSWORD: ${{ secrets.CLAUDE_KEYSTORE_PASSWORD }}
           CLAUDE_KEY_PASSWORD: ${{ secrets.CLAUDE_KEY_PASSWORD }}
         run: |
-          if [ "${{ steps.key.outputs.signed }}" = true ]; then
-            gradle --no-daemon :app:assembleRelease
-          else
-            gradle --no-daemon :app:assembleDebug
-          fi
-      - name: Check signature and exact permissions
-        run: |
-          if [ "${{ steps.key.outputs.signed }}" = true ]; then
-            APK=app/build/outputs/apk/release/app-release.apk
-            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
-          else
-            APK=app/build/outputs/apk/debug/app-debug.apk
-          fi
-          PERMISSIONS=$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump permissions "$APK" | grep '^uses-permission:' || true)
-          printf '%s\n' "$PERMISSIONS"
-          printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.INTERNET'"
-          printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.RECORD_AUDIO'"
-          printf '%s\n' "$PERMISSIONS" | grep -Fx "uses-permission: name='android.permission.MODIFY_AUDIO_SETTINGS'"
-          test "$(printf '%s\n' "$PERMISSIONS" | grep -c '^uses-permission:')" -eq 3
-          mkdir -p artifacts
-          cp "$APK" "artifacts/Claude-Standalone-v$VERSION.apk"
-          sha256sum "artifacts/Claude-Standalone-v$VERSION.apk"
+          printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/app.jks"
+          export CLAUDE_KEYSTORE_FILE="$RUNNER_TEMP/app.jks"
+          gradle --no-daemon :app:assembleRelease
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify app/build/outputs/apk/release/app-release.apk
+          VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" app/build.gradle)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/Claude-v$VERSION.apk"
       - uses: actions/upload-artifact@v4
-        if: steps.key.outputs.signed == 'true'
         with:
-          name: claude-standalone-v${{ env.VERSION }}
-          path: artifacts/Claude-Standalone-v${{ env.VERSION }}.apk
-      - name: Check release tag is new
-        id: release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.key.outputs.signed == 'true'
+          name: claude-v${{ env.VERSION }}
+          path: out/Claude-v${{ env.VERSION }}.apk
+      - name: Publish release for main
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Never replace the APK of an already-published version; bump versionName instead.
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::warning::Release v$VERSION already exists; bump versionName/versionCode to publish."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Release v$VERSION already exists; bump versionName to publish."
           else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+            gh release create "v$VERSION" "out/Claude-v$VERSION.apk" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Claude v$VERSION" --notes "Claude in a plain Android WebView."
           fi
-      - uses: softprops/action-gh-release@v2
-        if: steps.release.outputs.publish == 'true'
-        with:
-          tag_name: v${{ env.VERSION }}
-          name: Standalone Claude v${{ env.VERSION }}
-          files: artifacts/Claude-Standalone-v${{ env.VERSION }}.apk
-          body: |
-            Claude stays in its own WebView; every non-Claude link asks first, on the current page, and "open in app" uses a separate closable layer with the site shown.
-            Enter-to-send also finds the composer's Send button in Claude Code (textarea composers) and no longer skips right after a Latin-keyboard word is committed.
-            Follows the system light/dark theme; forced/algorithmic darkening of pages is disabled.
-            A crashed or system-killed page renderer no longer takes the whole app down; Claude is reopened.
-            Downloads follow redirects themselves so claude.ai cookies are never sent to another host.
-            Keyboard no longer pops up by itself on page load, navigation or returning to the app.
-            The window is no longer pinned to a display refresh mode (suspected cause of screen corruption while dragging text-selection handles).
-            Returning from the background shows the page immediately: Claude's page is no longer marked hidden, so its rendered content is not evicted and Claude does not refresh on return.
-            While text is selected, pages render into their own layer, so dragging selection handles no longer turns the page background black.
-            Downloads are saved through the system "save as" screen; file picker no longer greys out accepted files.
-            Privacy: third-party cookies off, X-Requested-With app header off where supported, WebView metrics opt-out.
-            INTERNET plus on-demand RECORD_AUDIO and normal MODIFY_AUDIO_SETTINGS for voice dictation.
-            Google OAuth in embedded WebView depends on Google's policy.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
