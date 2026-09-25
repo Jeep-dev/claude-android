@@ -135,13 +135,14 @@ public final class MainActivity extends Activity {
                 FileChooserParams params) {
             if (fileCallback != null) fileCallback.onReceiveValue(null);
             fileCallback = callback;
-            Intent pick = new Intent(Intent.ACTION_GET_CONTENT)
+            // The system file picker directly, without an app chooser in between.
+            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                     .addCategory(Intent.CATEGORY_OPENABLE)
                     .setType("*/*")
                     .putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
                             params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
             try {
-                startActivityForResult(Intent.createChooser(pick, null), CHOOSE_FILE);
+                startActivityForResult(pick, CHOOSE_FILE);
                 return true;
             } catch (ActivityNotFoundException e) {
                 fileCallback = null;

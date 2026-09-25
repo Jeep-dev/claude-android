@@ -1,4 +1,4 @@
-# Claude for Android (v4.0.1)
+# Claude for Android (v4.0.2)
 
 A plain Android WebView showing https://claude.ai/, written from scratch. No page scripts,
 no theme tweaks; apart from keeping the page rendered in the background (below), the
@@ -6,7 +6,7 @@ WebView runs with its default behaviour.
 
 - Claude (`claude.ai`, `*.claude.ai`), Anthropic pages and `accounts.google.com` open in the app;
   every other link opens in the system browser. Embedded frames load normally.
-- File uploads use the system file picker. The microphone is requested only when Claude
+- File uploads open the system file picker directly. The microphone is requested only when Claude
   starts voice dictation.
 - `https` downloads go to Downloads through the system download manager. Downloads that
   exist only inside the page (`blob:`) are not supported.
