@@ -16,10 +16,8 @@ WebView runs with its default behaviour.
 - The status bar takes Claude's background colour (set by Claude's own theme setting: dark
   page, dark status bar; light page, light status bar), with icons to match. The navigation
   bar stays white.
-- While text is selected (outside the message box), backgrounds whose computed colour is not
-  plain sRGB (Claude's `color-mix()` colours compute to `color(srgb …)`, or oklab/oklch) are
-  pinned inline to the same colour as `rgb()`, and put back when the selection ends: WebView
-  paints such backgrounds black while a selection is being dragged; Chrome does not.
+- Drag and drop from within the page is off (`dragstart` is cancelled): dragging selected text
+  started it, and WebView then blacked out the screen. Files dropped in from outside still work.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
@@ -27,8 +25,7 @@ WebView runs with its default behaviour.
   or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
   box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
   confirms it; with no Send button (Claude replying) Enter is a new line. In an empty box (nothing typed),
-  Enter and a tap on the ↵ icon (Claude's Send button, disabled while the box is empty;
-  a tap on it otherwise falls through to the box and only shows the keyboard) press Tab instead, with no keyboard for the tap, which takes Claude's grey
+  Enter presses Tab instead, which takes Claude's grey
   suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. After sending, the
   keyboard closes. The keyboard shows a Send key for message boxes.
 - Back goes back in the page; at the start it moves the app to the background.

@@ -77,31 +77,6 @@ tap(send); send.click(); flush(); now += 50; editor.focus();
 assert.equal(document.activeElement, body, 'tapping Send sends without opening the keyboard');
 assert.equal(send.clicks, 1);
 
-function touch(target) {
-  let prevented = false;
-  document.listeners.touchstart.forEach(h => h({ target, touches: [{}],
-    preventDefault() { prevented = true; }, stopImmediatePropagation() {} }));
-  return prevented;
-}
-editor.textContent = '';
-send.disabled = true;
-assert.equal(touch(send), true, 'a touch on the disabled Send (↵) of an empty box is taken over');
-assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], '...and presses Tab (takes the suggestion)');
-assert.equal(editor.getAttribute('inputmode'), 'none', '...with no keyboard');
-flush();
-assert.equal(document.activeElement, body, '...and leaves the box unfocused');
-assert.equal(editor.getAttribute('inputmode'), null, '...inputmode restored');
-editor.events = [];
-assert.equal(touch(editor), false, 'the box itself is left alone (keyboard)');
-assert.equal(touch(hint), false, 'other parts are left alone');
-send.disabled = false;
-assert.equal(touch(send), false, 'an enabled Send is left alone');
-send.disabled = true;
-editor.textContent = 'typed';
-assert.equal(touch(send), false, 'with text typed the icon is left alone');
-assert.equal(editor.events.length, 0);
-send.disabled = false;
-
 tap(editor); now += 10; editor.focus();
 assert.equal(document.activeElement, editor, 'touching the message box opens the keyboard');
 document.listeners.focusin.forEach(h => h({ target: editor }));
@@ -125,4 +100,7 @@ assert.equal(key({}), true, 'Send disabled: no new line');
 assert.equal(send.clicks, 2, 'Send disabled: nothing sent');
 send.attrs['aria-label'] = 'Stop response';
 assert.equal(key({}), false, 'no Send button (Claude replying): Enter is a new line');
+let dragBlocked = false;
+document.listeners.dragstart.forEach(h => h({ preventDefault() { dragBlocked = true; } }));
+assert.equal(dragBlocked, true, 'dragging selected text does not start drag and drop');
 console.log('claude-page: all tests passed');
