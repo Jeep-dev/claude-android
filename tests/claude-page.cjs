@@ -24,31 +24,32 @@ class Element extends Node {
     return out;
   }
   getClientRects() { return [1]; }
-  getBoundingClientRect() { return { height: this.tagName === 'BODY' ? 1000 : 60 }; }
+  getBoundingClientRect() { return { top: 900, bottom: 940, height: this.tagName === 'BODY' ? 1000 : 60 }; }
+  dispatchEvent(e) { (this.events ||= []).push(e.type + ':' + e.key); }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
-  removeAttribute(k) { delete this.attrs[k]; }
   click() { this.clicks++; document.listeners.click.forEach(h => h({ target: this })); }
   blur() { if (document.activeElement === this) document.activeElement = body; }
 }
 class HTMLElement extends Element {}
 HTMLElement.prototype.focus = function () { document.activeElement = this; };
 
-const document = { listeners: { click: [], keydown: [], focusin: [], focusout: [] },
+const document = { listeners: { click: [], keydown: [], focusin: [] },
   addEventListener(t, h) { (this.listeners[t] ||= []).push(h); } };
 const body = new HTMLElement('body');
 const link = new HTMLElement('a', new HTMLElement('nav', body));
 const composer = new HTMLElement('div', body);
 const editor = new HTMLElement('div', new HTMLElement('div', composer), { contenteditable: 'true' });
 const send = new HTMLElement('button', new HTMLElement('div', composer), { 'aria-label': 'Send message' });
-const hint = new HTMLElement('button', composer, { 'aria-label': 'Use suggestion' });
+const hint = new HTMLElement('div', composer);
 document.activeElement = body;
 
 let now = 0;
 const timers = [];
 const windowListeners = {};
 const window = { innerHeight: 1000, addEventListener: (t, h) => { windowListeners[t] = h; } };
-vm.runInNewContext(script, { window, document, HTMLElement, Element, Node,
+class KeyboardEvent { constructor(type, init) { this.type = type; Object.assign(this, init); } }
+vm.runInNewContext(script, { window, document, HTMLElement, Element, Node, KeyboardEvent,
   Date: { now: () => now }, setTimeout: fn => timers.push(fn) });
 const tap = target => windowListeners.pointerdown({ target });
 const flush = () => { while (timers.length) timers.shift()(); };
@@ -68,19 +69,29 @@ tap(send); send.click(); flush(); now += 50; editor.focus();
 assert.equal(document.activeElement, body, 'tapping Send sends without opening the keyboard');
 assert.equal(send.clicks, 1);
 
-tap(hint); now += 10; editor.focus();
-assert.equal(document.activeElement, editor, 'the suggestion icon in the box may focus the field');
-assert.equal(editor.getAttribute('inputmode'), 'none', '...without opening the keyboard');
-document.listeners.focusout.forEach(h => h({ target: editor }));
-assert.equal(editor.getAttribute('inputmode'), null, 'inputmode restored on blur');
-document.activeElement = body;
+function click(target, y) {
+  let prevented = false;
+  document.listeners.click.forEach(h => h({ target, clientY: y, preventDefault() { prevented = true; },
+    stopImmediatePropagation() {} }));
+  return prevented;
+}
+editor.textContent = '';
+assert.equal(click(hint, 920), true, 'the Enter icon in an empty box is taken over');
+assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], '...and presses Tab (takes the suggestion)');
+assert.equal(document.activeElement, body, '...without opening the keyboard');
+assert.equal(click(hint, 700), false, 'a tap off the text row is left alone');
+editor.textContent = 'typed';
+assert.equal(click(hint, 920), false, 'with text typed the icon is left alone');
+editor.events = [];
 
 tap(editor); now += 10; editor.focus();
 assert.equal(document.activeElement, editor, 'touching the message box opens the keyboard');
 document.listeners.focusin.forEach(h => h({ target: editor }));
 assert.equal(editor.getAttribute('enterkeyhint'), 'send', 'keyboard shows a Send key');
 
-assert.equal(key({}), false, 'empty box: Enter is left to Claude (suggested prompt)');
+editor.textContent = '';
+assert.equal(key({}), true, 'empty box: Enter is taken over');
+assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], 'empty box: Enter presses Tab');
 editor.textContent = 'hello';
 assert.equal(key({}), true, 'Enter is taken over');
 assert.equal(send.clicks, 2, 'Enter sends');

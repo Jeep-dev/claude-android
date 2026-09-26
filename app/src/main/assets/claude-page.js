@@ -5,12 +5,12 @@
   // Keyboard behaviour on claude.ai:
   // 1. Claude moving the cursor into a text field by script (after switching chats, after
   //    sending) opens no keyboard: focus() on a text field is ignored unless that field was
-  //    just touched or a text field already has focus. A tap on the message box's own
-  //    controls (e.g. the suggested prompt's Enter icon) lets the focus through, but without
-  //    a keyboard (inputmode "none") until the field itself is touched.
+  //    just touched or a text field already has focus.
   // 2. Enter sends (clicks the message box's Send button); Shift+Enter makes a new line.
   //    Enter that confirms an input-method candidate only confirms it.
-  // 3. After sending, the keyboard closes.
+  // 3. In an empty message box, Enter and a tap on the box's Enter icon press Tab instead:
+  //    Tab takes Claude's suggested prompt, which a phone keyboard has no key for.
+  // 4. After sending, the keyboard closes.
   const EDITABLE = 'textarea, input, [contenteditable]:not([contenteditable="false"])';
   const SEND = 'button[aria-label*="send" i], button[aria-label*="submit" i], button[type="submit"]';
   const RECENT_MS = 1000;
@@ -29,51 +29,37 @@
     return [];
   }
 
+  // Nothing typed: the text the user entered, not counting the grey suggestion Claude shows.
+  function empty(field) {
+    if (field.tagName === 'TEXTAREA') return !field.value.trim();
+    let text = field.textContent || '';
+    for (const shown of field.querySelectorAll('[contenteditable="false"]')) {
+      text = text.replace(shown.textContent || '', '');
+    }
+    return !text.trim();
+  }
+
+  function pressTab(field) {
+    const init = { key: 'Tab', code: 'Tab', keyCode: 9, which: 9, bubbles: true, cancelable: true };
+    field.dispatchEvent(new KeyboardEvent('keydown', init));
+    field.dispatchEvent(new KeyboardEvent('keyup', init));
+  }
+
   function closeKeyboard() {
     const field = document.activeElement;
     if (editable(field)) field.blur();
   }
 
-  // A field focused without a keyboard, and its own inputmode to put back.
-  let quiet = null;
-  let quietMode = null;
-  function unquiet() {
-    if (!quiet) return;
-    if (quietMode === null) quiet.removeAttribute('inputmode');
-    else quiet.setAttribute('inputmode', quietMode);
-    quiet = null;
-  }
-
   window.addEventListener('pointerdown', event => {
     touched = event.target;
     touchedAt = Date.now();
-    if (quiet && touched instanceof Node && quiet.contains(touched)) unquiet();
   }, { capture: true, passive: true });
-  document.addEventListener('focusout', event => { if (event.target === quiet) unquiet(); }, true);
-
-  // The touched control is part of the message box around the field (not its Send button):
-  // a close ancestor of the field that is still small, unlike the page or the sidebar.
-  function onBox(field) {
-    if (!(touched instanceof Element) || touched.closest(SEND)) return false;
-    for (let area = field.parentElement, i = 0; area && i < 4; area = area.parentElement, i++) {
-      if (area.getBoundingClientRect().height > window.innerHeight * 0.4) return false;
-      if (area.contains(touched)) return true;
-    }
-    return false;
-  }
 
   const focus = HTMLElement.prototype.focus;
   HTMLElement.prototype.focus = function (options) {
     if (editable(this) && !editable(document.activeElement)) {
-      const recent = touched instanceof Node && Date.now() - touchedAt <= RECENT_MS;
-      if (!recent) return;
-      if (!this.contains(touched)) {
-        if (!onBox(this)) return;
-        unquiet();
-        quiet = this;
-        quietMode = this.getAttribute('inputmode');
-        this.setAttribute('inputmode', 'none');
-      }
+      const onField = touched instanceof Node && this.contains(touched);
+      if (!onField || Date.now() - touchedAt > RECENT_MS) return;
     }
     return focus.call(this, options);
   };
@@ -83,9 +69,12 @@
     if (event.isComposing || event.keyCode === 229) return;
     const field = event.target;
     if (!editable(field) || field.tagName === 'INPUT') return;
-    // An empty box: Enter is Claude's own (e.g. it sends the suggested prompt shown there).
-    const text = field.tagName === 'TEXTAREA' ? field.value : field.textContent;
-    if (!(text || '').trim()) return;
+    if (empty(field)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pressTab(field);
+      return;
+    }
     const buttons = sendButtons(field);
     if (!buttons.length) return; // No Send button here (e.g. Claude is replying): a new line.
     event.preventDefault();
@@ -93,6 +82,31 @@
     // A disabled Send (e.g. an upload in progress) means nothing to send, and no new line either.
     const send = buttons.find(b => !b.disabled && b.getClientRects().length);
     if (send) send.click();
+  }, true);
+
+  // The Enter icon inside an empty message box: a tap on the box, off the text field, on the
+  // text's own row (the box's other buttons sit on a row below). The box is a close ancestor
+  // of the field that is still small, unlike the page or the sidebar.
+  function boxField(target, y) {
+    if (!(target instanceof Element) || editable(target) || target.closest(SEND + ', a')) return null;
+    for (let area = target.parentElement, i = 0; area && i < 4; area = area.parentElement, i++) {
+      if (area.getBoundingClientRect().height > window.innerHeight * 0.4) return null;
+      const field = Array.from(area.querySelectorAll(EDITABLE))
+        .find(f => editable(f) && f.tagName !== 'INPUT');
+      if (!field) continue;
+      if (field.contains(target)) return null;
+      const row = field.getBoundingClientRect();
+      return y >= row.top - 16 && y <= row.bottom + 16 ? field : null;
+    }
+    return null;
+  }
+
+  document.addEventListener('click', event => {
+    const field = boxField(event.target, event.clientY);
+    if (!field || !empty(field)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    pressTab(field);
   }, true);
 
   // Sending by Enter or by tapping Send: close the keyboard once Claude has taken the text.

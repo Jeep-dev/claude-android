@@ -19,13 +19,12 @@ WebView runs with its default behaviour.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
-  unless that field was just touched or a text field already has focus (a tap on the
-  message box's own controls, e.g. the suggested prompt's Enter icon, lets it through without
-  a keyboard), so switching chats
+  unless that field was just touched or a text field already has focus, so switching chats
   or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
   box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
-  confirms it; with no Send button (Claude replying) Enter is a new line; in an empty box Enter is left to
-  Claude (it sends a suggested prompt shown there). After sending, the
+  confirms it; with no Send button (Claude replying) Enter is a new line. In an empty box (nothing typed),
+  Enter and a tap on the box's Enter icon press Tab instead, which takes Claude's grey
+  suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. After sending, the
   keyboard closes. The keyboard shows a Send key for message boxes.
 - Back goes back in the page; at the start it moves the app to the background.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.
