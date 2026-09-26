@@ -76,4 +76,33 @@
       field.setAttribute('enterkeyhint', 'send');
     }
   }, true);
+
+  // The status bar takes Claude's background colour, so it follows the Claude theme setting.
+  const bar = window.ClaudeStatusBar;
+  if (bar && window.getComputedStyle && window.MutationObserver) {
+    const rgb = css => {
+      let m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?/.exec(css);
+      let c = m && [+m[1], +m[2], +m[3]];
+      if (!m) {
+        m = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?/.exec(css);
+        c = m && [m[1] * 255, m[2] * 255, m[3] * 255];
+      }
+      if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return null; // transparent
+      return c.map(v => Math.max(0, Math.min(255, Math.round(v))));
+    };
+    let last = null;
+    const update = () => {
+      const c = (document.body && rgb(getComputedStyle(document.body).backgroundColor))
+        || rgb(getComputedStyle(document.documentElement).backgroundColor);
+      if (!c) return;
+      const value = (c[0] << 16) | (c[1] << 8) | c[2];
+      if (value !== last) { last = value; bar.setColor(value); }
+    };
+    // Claude switches theme through attributes on <html>/<body>; its colours may fade in.
+    const soon = () => { update(); setTimeout(update, 400); };
+    new MutationObserver(soon).observe(document.documentElement, { attributes: true });
+    if (document.body) new MutationObserver(soon).observe(document.body, { attributes: true });
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', soon);
+    soon();
+  }
 })();

@@ -13,8 +13,9 @@ WebView runs with its default behaviour.
 - Returning from the background shows the page at once: rendered content is kept
   (offscreen pre-raster) and Chromium is not told the window was hidden, so Claude does not
   refresh. Costs some memory, and a streaming reply keeps running in the background.
-- The status bar and navigation bar take the colour the page shows at its top and bottom edge
-  (read from the screen after the page draws), with dark or light icons to match.
+- The status bar takes Claude's background colour (set by Claude's own theme setting: dark
+  page, dark status bar; light page, light status bar), with icons to match. The navigation
+  bar stays white.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
