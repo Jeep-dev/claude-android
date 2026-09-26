@@ -16,6 +16,10 @@ WebView runs with its default behaviour.
 - The status bar takes Claude's background colour (set by Claude's own theme setting: dark
   page, dark status bar; light page, light status bar), with icons to match. The navigation
   bar stays white.
+- While text is selected (outside the message box), backgrounds whose computed colour is not
+  plain sRGB (Claude's `color-mix()` colours compute to `color(srgb …)`, or oklab/oklch) are
+  pinned inline to the same colour as `rgb()`, and put back when the selection ends: WebView
+  paints such backgrounds black while a selection is being dragged; Chrome does not.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
