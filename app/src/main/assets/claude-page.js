@@ -102,11 +102,6 @@
     }
   }, true);
 
-  // Dragging selected text starts the page's drag and drop, and WebView then blacks out the
-  // screen until it ends (Chrome does not). Nothing on claude.ai needs dragging from within the
-  // page; files dropped in from outside do not start here and still work.
-  document.addEventListener('dragstart', event => event.preventDefault(), true);
-
   // The status bar takes Claude's background colour, so it follows the Claude theme setting.
   const bar = window.ClaudeStatusBar;
   if (bar && window.getComputedStyle && window.MutationObserver) {

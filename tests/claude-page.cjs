@@ -100,7 +100,4 @@ assert.equal(key({}), true, 'Send disabled: no new line');
 assert.equal(send.clicks, 2, 'Send disabled: nothing sent');
 send.attrs['aria-label'] = 'Stop response';
 assert.equal(key({}), false, 'no Send button (Claude replying): Enter is a new line');
-let dragBlocked = false;
-document.listeners.dragstart.forEach(h => h({ preventDefault() { dragBlocked = true; } }));
-assert.equal(dragBlocked, true, 'dragging selected text does not start drag and drop');
 console.log('claude-page: all tests passed');

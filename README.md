@@ -16,8 +16,6 @@ WebView runs with its default behaviour.
 - The status bar takes Claude's background colour (set by Claude's own theme setting: dark
   page, dark status bar; light page, light status bar), with icons to match. The navigation
   bar stays white.
-- Drag and drop from within the page is off (`dragstart` is cancelled): dragging selected text
-  started it, and WebView then blacked out the screen. Files dropped in from outside still work.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
