@@ -24,27 +24,30 @@ class Element extends Node {
     return out;
   }
   getClientRects() { return [1]; }
+  getBoundingClientRect() { return { height: this.tagName === 'BODY' ? 1000 : 60 }; }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+  removeAttribute(k) { delete this.attrs[k]; }
   click() { this.clicks++; document.listeners.click.forEach(h => h({ target: this })); }
   blur() { if (document.activeElement === this) document.activeElement = body; }
 }
 class HTMLElement extends Element {}
 HTMLElement.prototype.focus = function () { document.activeElement = this; };
 
-const document = { listeners: { click: [], keydown: [], focusin: [] },
+const document = { listeners: { click: [], keydown: [], focusin: [], focusout: [] },
   addEventListener(t, h) { (this.listeners[t] ||= []).push(h); } };
 const body = new HTMLElement('body');
 const link = new HTMLElement('a', new HTMLElement('nav', body));
 const composer = new HTMLElement('div', body);
 const editor = new HTMLElement('div', new HTMLElement('div', composer), { contenteditable: 'true' });
 const send = new HTMLElement('button', new HTMLElement('div', composer), { 'aria-label': 'Send message' });
+const hint = new HTMLElement('button', composer, { 'aria-label': 'Use suggestion' });
 document.activeElement = body;
 
 let now = 0;
 const timers = [];
 const windowListeners = {};
-const window = { addEventListener: (t, h) => { windowListeners[t] = h; } };
+const window = { innerHeight: 1000, addEventListener: (t, h) => { windowListeners[t] = h; } };
 vm.runInNewContext(script, { window, document, HTMLElement, Element, Node,
   Date: { now: () => now }, setTimeout: fn => timers.push(fn) });
 const tap = target => windowListeners.pointerdown({ target });
@@ -64,6 +67,13 @@ assert.equal(document.activeElement, body, 'no keyboard after switching chats');
 tap(send); send.click(); flush(); now += 50; editor.focus();
 assert.equal(document.activeElement, body, 'tapping Send sends without opening the keyboard');
 assert.equal(send.clicks, 1);
+
+tap(hint); now += 10; editor.focus();
+assert.equal(document.activeElement, editor, 'the suggestion icon in the box may focus the field');
+assert.equal(editor.getAttribute('inputmode'), 'none', '...without opening the keyboard');
+document.listeners.focusout.forEach(h => h({ target: editor }));
+assert.equal(editor.getAttribute('inputmode'), null, 'inputmode restored on blur');
+document.activeElement = body;
 
 tap(editor); now += 10; editor.focus();
 assert.equal(document.activeElement, editor, 'touching the message box opens the keyboard');

@@ -5,7 +5,9 @@
   // Keyboard behaviour on claude.ai:
   // 1. Claude moving the cursor into a text field by script (after switching chats, after
   //    sending) opens no keyboard: focus() on a text field is ignored unless that field was
-  //    just touched or a text field already has focus.
+  //    just touched or a text field already has focus. A tap on the message box's own
+  //    controls (e.g. the suggested prompt's Enter icon) lets the focus through, but without
+  //    a keyboard (inputmode "none") until the field itself is touched.
   // 2. Enter sends (clicks the message box's Send button); Shift+Enter makes a new line.
   //    Enter that confirms an input-method candidate only confirms it.
   // 3. After sending, the keyboard closes.
@@ -32,16 +34,46 @@
     if (editable(field)) field.blur();
   }
 
+  // A field focused without a keyboard, and its own inputmode to put back.
+  let quiet = null;
+  let quietMode = null;
+  function unquiet() {
+    if (!quiet) return;
+    if (quietMode === null) quiet.removeAttribute('inputmode');
+    else quiet.setAttribute('inputmode', quietMode);
+    quiet = null;
+  }
+
   window.addEventListener('pointerdown', event => {
     touched = event.target;
     touchedAt = Date.now();
+    if (quiet && touched instanceof Node && quiet.contains(touched)) unquiet();
   }, { capture: true, passive: true });
+  document.addEventListener('focusout', event => { if (event.target === quiet) unquiet(); }, true);
+
+  // The touched control is part of the message box around the field (not its Send button):
+  // a close ancestor of the field that is still small, unlike the page or the sidebar.
+  function onBox(field) {
+    if (!(touched instanceof Element) || touched.closest(SEND)) return false;
+    for (let area = field.parentElement, i = 0; area && i < 4; area = area.parentElement, i++) {
+      if (area.getBoundingClientRect().height > window.innerHeight * 0.4) return false;
+      if (area.contains(touched)) return true;
+    }
+    return false;
+  }
 
   const focus = HTMLElement.prototype.focus;
   HTMLElement.prototype.focus = function (options) {
     if (editable(this) && !editable(document.activeElement)) {
-      const onField = touched instanceof Node && this.contains(touched);
-      if (!onField || Date.now() - touchedAt > RECENT_MS) return;
+      const recent = touched instanceof Node && Date.now() - touchedAt <= RECENT_MS;
+      if (!recent) return;
+      if (!this.contains(touched)) {
+        if (!onBox(this)) return;
+        unquiet();
+        quiet = this;
+        quietMode = this.getAttribute('inputmode');
+        this.setAttribute('inputmode', 'none');
+      }
     }
     return focus.call(this, options);
   };

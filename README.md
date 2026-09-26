@@ -19,7 +19,9 @@ WebView runs with its default behaviour.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored
-  unless that field was just touched or a text field already has focus, so switching chats
+  unless that field was just touched or a text field already has focus (a tap on the
+  message box's own controls, e.g. the suggested prompt's Enter icon, lets it through without
+  a keyboard), so switching chats
   or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
   box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
   confirms it; with no Send button (Claude replying) Enter is a new line; in an empty box Enter is left to
