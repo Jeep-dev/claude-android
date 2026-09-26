@@ -22,9 +22,10 @@ WebView runs with its default behaviour.
   unless that field was just touched or a text field already has focus, so switching chats
   or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
   box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
-  confirms it; with no Send button (Claude replying) Enter is a new line. In an empty box (nothing typed),
-  Enter presses Tab instead, which takes Claude's grey
-  suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. After sending, the
+  confirms it; with no Send button (Claude replying) Enter is a new line. In an empty box with nothing to send
+  (Send disabled), Enter presses Tab instead, which takes Claude's grey
+  suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. With only an
+  attachment Send is enabled, and Enter sends. After sending, the
   keyboard closes. The keyboard shows a Send key for message boxes.
 - Back goes back in the page; at the start it moves the app to the background.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.

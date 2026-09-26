@@ -8,8 +8,9 @@
   //    just touched or a text field already has focus.
   // 2. Enter sends (clicks the message box's Send button); Shift+Enter makes a new line.
   //    Enter that confirms an input-method candidate only confirms it.
-  // 3. In an empty message box, Enter presses Tab instead: Tab takes Claude's suggested
-  //    prompt, which a phone keyboard has no key for.
+  // 3. In an empty message box with nothing to send (Send disabled), Enter presses Tab
+  //    instead: Tab takes Claude's suggested prompt, which a phone keyboard has no key for.
+  //    With only an attachment, Send is enabled and Enter sends.
   // 4. After sending, the keyboard closes.
   const EDITABLE = 'textarea, input, [contenteditable]:not([contenteditable="false"])';
   const SEND = 'button[aria-label*="send" i], button[aria-label*="submit" i], button[type="submit"], '
@@ -70,19 +71,26 @@
     if (event.isComposing || event.keyCode === 229) return;
     const field = event.target;
     if (!editable(field) || field.tagName === 'INPUT') return;
+    const buttons = sendButtons(field);
+    const send = buttons.find(b => !b.disabled && b.getClientRects().length);
+    // Something to send (text, or only an attachment): Enter sends it.
+    if (send) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      send.click();
+      return;
+    }
+    // Nothing typed and nothing to send: Enter presses Tab (takes the suggested prompt).
     if (empty(field)) {
       event.preventDefault();
       event.stopImmediatePropagation();
       pressTab(field);
       return;
     }
-    const buttons = sendButtons(field);
     if (!buttons.length) return; // No Send button here (e.g. Claude is replying): a new line.
+    // Text typed but Send disabled (e.g. an upload in progress): no new line either.
     event.preventDefault();
     event.stopImmediatePropagation();
-    // A disabled Send (e.g. an upload in progress) means nothing to send, and no new line either.
-    const send = buttons.find(b => !b.disabled && b.getClientRects().length);
-    if (send) send.click();
   }, true);
 
   // Sending by Enter or by tapping Send: close the keyboard once Claude has taken the text.
