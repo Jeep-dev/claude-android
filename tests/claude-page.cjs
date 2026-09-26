@@ -24,7 +24,8 @@ class Element extends Node {
     return out;
   }
   getClientRects() { return [1]; }
-  getBoundingClientRect() { return { top: 900, bottom: 940, height: this.tagName === 'BODY' ? 1000 : 60 }; }
+  getBoundingClientRect() { return { top: 900, bottom: 940, right: 400, height: this.tagName === 'BODY' ? 1000 : 60 }; }
+  removeAttribute(k) { delete this.attrs[k]; }
   dispatchEvent(e) { (this.events ||= []).push(e.type + ':' + e.key); }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
@@ -34,7 +35,7 @@ class Element extends Node {
 class HTMLElement extends Element {}
 HTMLElement.prototype.focus = function () { document.activeElement = this; };
 
-const document = { listeners: { click: [], keydown: [], focusin: [] },
+const document = { listeners: { click: [], keydown: [], focusin: [], touchstart: [] },
   addEventListener(t, h) { (this.listeners[t] ||= []).push(h); } };
 const body = new HTMLElement('body');
 const link = new HTMLElement('a', new HTMLElement('nav', body));
@@ -69,20 +70,26 @@ tap(send); send.click(); flush(); now += 50; editor.focus();
 assert.equal(document.activeElement, body, 'tapping Send sends without opening the keyboard');
 assert.equal(send.clicks, 1);
 
-function click(target, y) {
+function touch(target, x, y) {
   let prevented = false;
-  document.listeners.click.forEach(h => h({ target, clientY: y, preventDefault() { prevented = true; },
-    stopImmediatePropagation() {} }));
+  document.listeners.touchstart.forEach(h => h({ target, touches: [{ clientX: x, clientY: y }],
+    preventDefault() { prevented = true; }, stopImmediatePropagation() {} }));
   return prevented;
 }
 editor.textContent = '';
-assert.equal(click(hint, 920), true, 'the Enter icon in an empty box is taken over');
+assert.equal(touch(editor, 380, 920), true, 'the Enter icon (right end) of an empty box is taken over');
 assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], '...and presses Tab (takes the suggestion)');
-assert.equal(document.activeElement, body, '...without opening the keyboard');
-assert.equal(click(hint, 700), false, 'a tap off the text row is left alone');
-editor.textContent = 'typed';
-assert.equal(click(hint, 920), false, 'with text typed the icon is left alone');
+assert.equal(editor.getAttribute('inputmode'), 'none', '...with no keyboard');
+flush();
+assert.equal(document.activeElement, body, '...and leaves the box unfocused');
+assert.equal(editor.getAttribute('inputmode'), null, '...inputmode restored');
 editor.events = [];
+assert.equal(touch(editor, 200, 920), false, 'the rest of the box is left alone (keyboard)');
+assert.equal(touch(hint, 380, 700), false, 'a touch off the text row is left alone');
+assert.equal(touch(send, 380, 920), false, 'Send is left alone');
+editor.textContent = 'typed';
+assert.equal(touch(editor, 380, 920), false, 'with text typed the icon is left alone');
+assert.equal(editor.events.length, 0);
 
 tap(editor); now += 10; editor.focus();
 assert.equal(document.activeElement, editor, 'touching the message box opens the keyboard');

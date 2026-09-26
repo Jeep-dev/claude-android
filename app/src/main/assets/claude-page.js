@@ -84,30 +84,47 @@
     if (send) send.click();
   }, true);
 
-  // The Enter icon inside an empty message box: a tap on the box, off the text field, on the
-  // text's own row (the box's other buttons sit on a row below). The box is a close ancestor
-  // of the field that is still small, unlike the page or the sidebar.
-  function boxField(target, y) {
-    if (!(target instanceof Element) || editable(target) || target.closest(SEND + ', a')) return null;
-    for (let area = target.parentElement, i = 0; area && i < 4; area = area.parentElement, i++) {
-      if (area.getBoundingClientRect().height > window.innerHeight * 0.4) return null;
-      const field = Array.from(area.querySelectorAll(EDITABLE))
-        .find(f => editable(f) && f.tagName !== 'INPUT');
-      if (!field) continue;
-      if (field.contains(target)) return null;
-      const row = field.getBoundingClientRect();
-      return y >= row.top - 16 && y <= row.bottom + 16 ? field : null;
+  // The Enter icon at the right end of an empty message box shows the keyboard when tapped.
+  // A touch there (within ICON_PX of the box's right edge, on the text's row) presses Tab
+  // instead, with no keyboard. The box is the field and its close ancestors that are still
+  // small, unlike the page or the sidebar.
+  const ICON_PX = 56;
+  function iconTap(target, x, y) {
+    if (!(target instanceof Element) || target.closest(SEND + ', a')) return null;
+    let field = editable(target) && target.tagName !== 'INPUT' ? target : null;
+    let right = 0;
+    for (let area = field || target, i = 0; area && i < 5; area = area.parentElement, i++) {
+      const rect = area.getBoundingClientRect();
+      if (rect.height > window.innerHeight * 0.4) break;
+      right = Math.max(right, rect.right);
+      if (!field) {
+        field = Array.from(area.querySelectorAll(EDITABLE)).find(f => editable(f) && f.tagName !== 'INPUT') || null;
+      }
     }
-    return null;
+    if (!field || !empty(field)) return null;
+    const row = field.getBoundingClientRect();
+    if (y < row.top - 16 || y > row.bottom + 16 || x < right - ICON_PX || x > right) return null;
+    return field;
   }
 
-  document.addEventListener('click', event => {
-    const field = boxField(event.target, event.clientY);
-    if (!field || !empty(field)) return;
-    event.preventDefault();
+  document.addEventListener('touchstart', event => {
+    if (event.touches.length !== 1) return;
+    const point = event.touches[0];
+    const field = iconTap(event.target, point.clientX, point.clientY);
+    if (!field) return;
+    event.preventDefault(); // No tap on the field: no keyboard.
     event.stopImmediatePropagation();
+    // Tab goes to a focused field, as a real key would; inputmode "none" keeps the keyboard shut.
+    const mode = field.getAttribute('inputmode');
+    field.setAttribute('inputmode', 'none');
+    focus.call(field);
     pressTab(field);
-  }, true);
+    setTimeout(() => {
+      field.blur();
+      if (mode === null) field.removeAttribute('inputmode');
+      else field.setAttribute('inputmode', mode);
+    }, 100);
+  }, { capture: true, passive: false });
 
   // Sending by Enter or by tapping Send: close the keyboard once Claude has taken the text.
   document.addEventListener('click', event => {
