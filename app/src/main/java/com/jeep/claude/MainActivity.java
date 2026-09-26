@@ -7,9 +7,15 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.PixelCopy;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
@@ -40,6 +46,8 @@ public final class MainActivity extends Activity {
     private String pageScript;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingMicrophone;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private boolean barsQueued;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -66,6 +74,55 @@ public final class MainActivity extends Activity {
                 download(url, userAgent, disposition, mimeType));
 
         if (state == null || web.restoreState(state) == null) web.loadUrl(HOME);
+
+        // After the page draws, the system bars take the colour it shows at its top and bottom.
+        web.getViewTreeObserver().addOnDrawListener(() -> {
+            if (barsQueued) return;
+            barsQueued = true;
+            main.postDelayed(this::matchBars, 300);
+        });
+    }
+
+    /** Colours the status bar and navigation bar like the page's top and bottom edge. */
+    private void matchBars() {
+        barsQueued = false;
+        if (isFinishing() || web.getWidth() < 8 || web.getHeight() < 8) return;
+        int[] at = new int[2];
+        web.getLocationInWindow(at);
+        int x = at[0] + 2;
+        copyPixel(new Rect(x, at[1] + 1, x + 1, at[1] + 2), color -> {
+            getWindow().setStatusBarColor(color);
+            setLightBar(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR, color);
+        });
+        int bottom = at[1] + web.getHeight();
+        copyPixel(new Rect(x, bottom - 2, x + 1, bottom - 1), color -> {
+            getWindow().setNavigationBarColor(color);
+            setLightBar(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR, color);
+        });
+    }
+
+    private interface ColorCallback { void onColor(int color); }
+
+    /** Reads one pixel of what is on screen, so it matches whatever the page really shows. */
+    private void copyPixel(Rect area, ColorCallback callback) {
+        Bitmap pixel = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+        try {
+            PixelCopy.request(getWindow(), area, pixel, result -> {
+                if (result == PixelCopy.SUCCESS) callback.onColor(pixel.getPixel(0, 0) | 0xFF000000);
+                pixel.recycle();
+            }, main);
+        } catch (IllegalArgumentException e) {
+            pixel.recycle(); // The window has no surface right now.
+        }
+    }
+
+    /** Dark icons on a light bar, light icons on a dark one. */
+    private void setLightBar(int flag, int color) {
+        boolean light = Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114 > 150_000;
+        View decor = getWindow().getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        int wanted = light ? flags | flag : flags & ~flag;
+        if (wanted != flags) decor.setSystemUiVisibility(wanted);
     }
 
     /**
@@ -251,6 +308,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        main.removeCallbacksAndMessages(null);
         web.destroy();
         super.onDestroy();
     }
