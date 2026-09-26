@@ -23,8 +23,8 @@ WebView runs with its default behaviour.
   or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
   box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
   confirms it; with no Send button (Claude replying) Enter is a new line. In an empty box (nothing typed),
-  Enter and a tap on the Enter icon at the box's right end (which otherwise only shows the
-  keyboard) press Tab instead, with no keyboard for the tap, which takes Claude's grey
+  Enter and a tap on the box's Enter icon itself (found as an element, which otherwise only
+  shows the keyboard) press Tab instead, with no keyboard for the tap, which takes Claude's grey
   suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. After sending, the
   keyboard closes. The keyboard shows a Send key for message boxes.
 - Back goes back in the page; at the start it moves the app to the background.

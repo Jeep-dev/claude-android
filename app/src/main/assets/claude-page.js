@@ -84,27 +84,48 @@
     if (send) send.click();
   }, true);
 
-  // The Enter icon at the right end of an empty message box shows the keyboard when tapped.
-  // A touch there (within ICON_PX of the box's right edge, on the text's row) presses Tab
-  // instead, with no keyboard. The box is the field and its close ancestors that are still
-  // small, unlike the page or the sidebar.
-  const ICON_PX = 56;
+  // The Enter icon in an empty message box shows the keyboard when tapped. A touch on the
+  // icon itself (its on-screen box, SLOP_PX around it) presses Tab instead, with no keyboard.
+  // The icon: a small graphic (svg, img, kbd, or an ↵ character) on the text's row, in the
+  // box around the field: the field's close ancestors that are still small, unlike the page.
+  const SLOP_PX = 12;
+  const ICON_TEXT = /^[↵⏎⮐↩]$/;
+  function boxOf(el) {
+    let box = null;
+    for (let area = el, i = 0; area && i < 6; area = area.parentElement, i++) {
+      if (area.getBoundingClientRect().height > window.innerHeight * 0.5) break;
+      box = area;
+    }
+    return box;
+  }
+  function enterIcon(field, box) {
+    const row = field.getBoundingClientRect();
+    let bestRect = null;
+    for (const el of box.querySelectorAll('*')) {
+      const graphic = /^(svg|img|kbd)$/i.test(el.tagName) || ICON_TEXT.test((el.textContent || '').trim());
+      if (!graphic || el.closest(SEND + ', a')) continue;
+      if (field.contains(el) && !el.closest('[contenteditable="false"]')) continue;
+      if (el.parentElement && el.parentElement.closest('svg')) continue; // parts of an svg
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || rect.width > 48 || rect.height > 48) continue;
+      const middle = (rect.top + rect.bottom) / 2;
+      if (middle < row.top - 24 || middle > row.bottom + 24) continue;
+      if (!bestRect || rect.left > bestRect.left) bestRect = rect; // the rightmost
+    }
+    return bestRect;
+  }
   function iconTap(target, x, y) {
     if (!(target instanceof Element) || target.closest(SEND + ', a')) return null;
-    let field = editable(target) && target.tagName !== 'INPUT' ? target : null;
-    let right = 0;
-    for (let area = field || target, i = 0; area && i < 5; area = area.parentElement, i++) {
-      const rect = area.getBoundingClientRect();
-      if (rect.height > window.innerHeight * 0.4) break;
-      right = Math.max(right, rect.right);
-      if (!field) {
-        field = Array.from(area.querySelectorAll(EDITABLE)).find(f => editable(f) && f.tagName !== 'INPUT') || null;
-      }
-    }
+    const box = boxOf(target);
+    if (!box) return null;
+    const field = editable(target) && target.tagName !== 'INPUT' ? target
+      : Array.from(box.querySelectorAll(EDITABLE)).find(f => editable(f) && f.tagName !== 'INPUT');
     if (!field || !empty(field)) return null;
-    const row = field.getBoundingClientRect();
-    if (y < row.top - 16 || y > row.bottom + 16 || x < right - ICON_PX || x > right) return null;
-    return field;
+    const icon = enterIcon(field, boxOf(field) || box);
+    if (!icon) return null;
+    const on = x >= icon.left - SLOP_PX && x <= icon.right + SLOP_PX
+      && y >= icon.top - SLOP_PX && y <= icon.bottom + SLOP_PX;
+    return on ? field : null;
   }
 
   document.addEventListener('touchstart', event => {

@@ -13,6 +13,8 @@ class Element extends Node {
     if (parent) parent.children.push(this);
   }
   matches(sel) {
+    if (sel === '*') return true;
+    if (sel === 'svg') return this.tagName === 'SVG';
     if (sel.startsWith('textarea')) return this.tagName === 'TEXTAREA' || this.attrs.contenteditable === 'true';
     return this.tagName === 'BUTTON' && /send|submit/i.test(this.attrs['aria-label'] || '');
   }
@@ -24,7 +26,10 @@ class Element extends Node {
     return out;
   }
   getClientRects() { return [1]; }
-  getBoundingClientRect() { return { top: 900, bottom: 940, right: 400, height: this.tagName === 'BODY' ? 1000 : 60 }; }
+  getBoundingClientRect() {
+    return this.rect || { top: 900, bottom: 940, left: 0, right: 400, width: 400,
+      height: this.tagName === 'BODY' ? 1000 : 60 };
+  }
   removeAttribute(k) { delete this.attrs[k]; }
   dispatchEvent(e) { (this.events ||= []).push(e.type + ':' + e.key); }
   setAttribute(k, v) { this.attrs[k] = v; }
@@ -42,7 +47,9 @@ const link = new HTMLElement('a', new HTMLElement('nav', body));
 const composer = new HTMLElement('div', body);
 const editor = new HTMLElement('div', new HTMLElement('div', composer), { contenteditable: 'true' });
 const send = new HTMLElement('button', new HTMLElement('div', composer), { 'aria-label': 'Send message' });
-const hint = new HTMLElement('div', composer);
+const hint = new HTMLElement('svg', composer);
+hint.rect = { top: 910, bottom: 930, left: 370, right: 390, width: 20, height: 20 };
+editor.rect = { top: 900, bottom: 940, left: 20, right: 360, width: 340, height: 40 };
 document.activeElement = body;
 
 let now = 0;
@@ -77,7 +84,7 @@ function touch(target, x, y) {
   return prevented;
 }
 editor.textContent = '';
-assert.equal(touch(editor, 380, 920), true, 'the Enter icon (right end) of an empty box is taken over');
+assert.equal(touch(editor, 380, 920), true, 'a touch on the Enter icon of an empty box is taken over');
 assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], '...and presses Tab (takes the suggestion)');
 assert.equal(editor.getAttribute('inputmode'), 'none', '...with no keyboard');
 flush();
@@ -85,6 +92,7 @@ assert.equal(document.activeElement, body, '...and leaves the box unfocused');
 assert.equal(editor.getAttribute('inputmode'), null, '...inputmode restored');
 editor.events = [];
 assert.equal(touch(editor, 200, 920), false, 'the rest of the box is left alone (keyboard)');
+assert.equal(touch(editor, 350, 920), false, 'left of the icon is left alone');
 assert.equal(touch(hint, 380, 700), false, 'a touch off the text row is left alone');
 assert.equal(touch(send, 380, 920), false, 'Send is left alone');
 editor.textContent = 'typed';
