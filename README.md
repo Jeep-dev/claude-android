@@ -1,6 +1,6 @@
 # Claude for Android (v4.0.6)
 
-A plain Android WebView showing https://claude.ai/, written from scratch. One small page
+A plain Android WebView showing Claude (it opens at https://claude.ai/code), written from scratch. One small page
 script (below), no theme tweaks; apart from keeping the page rendered in the background (below), the
 WebView runs with its default behaviour.
 

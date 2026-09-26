@@ -33,7 +33,7 @@ import java.nio.charset.StandardCharsets;
 
 /** Claude in a plain WebView. Other websites open in the system browser. */
 public final class MainActivity extends Activity {
-    private static final String HOME = "https://claude.ai/";
+    private static final String HOME = "https://claude.ai/code";
     private static final int CHOOSE_FILE = 1;
     private static final int ASK_MICROPHONE = 2;
 
