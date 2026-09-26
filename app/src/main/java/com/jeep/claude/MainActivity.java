@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
@@ -27,6 +28,8 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -63,6 +66,7 @@ public final class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
 
         web.addJavascriptInterface(new StatusBar(), "ClaudeStatusBar");
+        web.addJavascriptInterface(new Diag(), "ClaudeDiag"); // TEMPORARY diagnostics
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
         web.setDownloadListener((url, userAgent, disposition, mimeType, length) ->
@@ -146,6 +150,40 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * TEMPORARY diagnostics: assets/claude-diag.js hands in page structure (no text), saved as
+     * Android/data/com.jeep.claude/files/diag-<kind>.json with the device and WebView versions.
+     */
+    private final class Diag {
+        @JavascriptInterface public void save(String kind, String json) {
+            if (!kind.matches("[a-z]{1,20}")) return;
+            // Both files together fit one GitHub issue (65536 characters).
+            if (json.length() > 30_000) json = json.substring(0, 30_000) + "\n...(truncated)";
+            File dir = getExternalFilesDir(null);
+            if (dir == null) return;
+            android.content.pm.PackageInfo webView = WebView.getCurrentWebViewPackage();
+            String device = "{\"device\": \"" + Build.MANUFACTURER + " " + Build.MODEL + "\", \"android\": "
+                    + Build.VERSION.SDK_INT + ", \"webview\": \"" + (webView == null ? "?"
+                    : webView.packageName + " " + webView.versionName) + "\", \"hardwareAccelerated\": "
+                    + web.isHardwareAccelerated() + ", \"layerType\": " + web.getLayerType() + "}\n";
+            try (FileOutputStream out = new FileOutputStream(new File(dir, "diag-" + kind + ".json"))) {
+                out.write(("=== " + kind + " ===\n" + device + json + "\n").getBytes(StandardCharsets.UTF_8));
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private String diagScript() {
+        try (InputStream in = getAssets().open("claude-diag.js")) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
     /** assets/claude-page.js: keyboard behaviour on claude.ai (no auto keyboard, Enter sends). */
     private String pageScript() {
         if (pageScript == null) {
@@ -176,6 +214,7 @@ public final class MainActivity extends Activity {
             String host = uri.getHost();
             if (host != null && (host.equals("claude.ai") || host.endsWith(".claude.ai"))) {
                 view.evaluateJavascript(pageScript(), null);
+                view.evaluateJavascript(diagScript(), null); // TEMPORARY diagnostics
             }
         }
 
