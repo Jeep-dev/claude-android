@@ -77,27 +77,30 @@ tap(send); send.click(); flush(); now += 50; editor.focus();
 assert.equal(document.activeElement, body, 'tapping Send sends without opening the keyboard');
 assert.equal(send.clicks, 1);
 
-function touch(target, x, y) {
+function touch(target) {
   let prevented = false;
-  document.listeners.touchstart.forEach(h => h({ target, touches: [{ clientX: x, clientY: y }],
+  document.listeners.touchstart.forEach(h => h({ target, touches: [{}],
     preventDefault() { prevented = true; }, stopImmediatePropagation() {} }));
   return prevented;
 }
 editor.textContent = '';
-assert.equal(touch(editor, 380, 920), true, 'a touch on the Enter icon of an empty box is taken over');
+send.disabled = true;
+assert.equal(touch(send), true, 'a touch on the disabled Send (↵) of an empty box is taken over');
 assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], '...and presses Tab (takes the suggestion)');
 assert.equal(editor.getAttribute('inputmode'), 'none', '...with no keyboard');
 flush();
 assert.equal(document.activeElement, body, '...and leaves the box unfocused');
 assert.equal(editor.getAttribute('inputmode'), null, '...inputmode restored');
 editor.events = [];
-assert.equal(touch(editor, 200, 920), false, 'the rest of the box is left alone (keyboard)');
-assert.equal(touch(editor, 350, 920), false, 'left of the icon is left alone');
-assert.equal(touch(hint, 380, 700), false, 'a touch off the text row is left alone');
-assert.equal(touch(send, 380, 920), false, 'Send is left alone');
+assert.equal(touch(editor), false, 'the box itself is left alone (keyboard)');
+assert.equal(touch(hint), false, 'other parts are left alone');
+send.disabled = false;
+assert.equal(touch(send), false, 'an enabled Send is left alone');
+send.disabled = true;
 editor.textContent = 'typed';
-assert.equal(touch(editor, 380, 920), false, 'with text typed the icon is left alone');
+assert.equal(touch(send), false, 'with text typed the icon is left alone');
 assert.equal(editor.events.length, 0);
+send.disabled = false;
 
 tap(editor); now += 10; editor.focus();
 assert.equal(document.activeElement, editor, 'touching the message box opens the keyboard');

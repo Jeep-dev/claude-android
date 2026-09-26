@@ -8,11 +8,12 @@
   //    just touched or a text field already has focus.
   // 2. Enter sends (clicks the message box's Send button); Shift+Enter makes a new line.
   //    Enter that confirms an input-method candidate only confirms it.
-  // 3. In an empty message box, Enter and a tap on the box's Enter icon press Tab instead:
+  // 3. In an empty message box, Enter and a tap on the ↵ (disabled Send) press Tab instead:
   //    Tab takes Claude's suggested prompt, which a phone keyboard has no key for.
   // 4. After sending, the keyboard closes.
   const EDITABLE = 'textarea, input, [contenteditable]:not([contenteditable="false"])';
-  const SEND = 'button[aria-label*="send" i], button[aria-label*="submit" i], button[type="submit"]';
+  const SEND = 'button[aria-label*="send" i], button[aria-label*="submit" i], button[type="submit"], '
+    + 'button[data-testid$="-send"]';
   const RECENT_MS = 1000;
   let touched = null;
   let touchedAt = 0;
@@ -84,54 +85,22 @@
     if (send) send.click();
   }, true);
 
-  // The Enter icon in an empty message box shows the keyboard when tapped. A touch on the
-  // icon itself (its on-screen box, SLOP_PX around it) presses Tab instead, with no keyboard.
-  // The icon: a small graphic (svg, img, kbd, or an ↵ character) on the text's row, in the
-  // box around the field: the field's close ancestors that are still small, unlike the page.
-  const SLOP_PX = 12;
-  const ICON_TEXT = /^[↵⏎⮐↩]$/;
-  function boxOf(el) {
-    let box = null;
-    for (let area = el, i = 0; area && i < 6; area = area.parentElement, i++) {
-      if (area.getBoundingClientRect().height > window.innerHeight * 0.5) break;
-      box = area;
+  // The ↵ icon in an empty message box is Claude's Send button, disabled while nothing is
+  // typed; a touch on a disabled button falls through to the box and opens the keyboard.
+  // A touch on it presses Tab on the box instead, with no keyboard.
+  function iconTap(target) {
+    const button = target instanceof Element && target.closest(SEND);
+    if (!button || !(button.disabled || button.getAttribute('aria-disabled') === 'true')) return null;
+    for (let area = button.parentElement, i = 0; area && i < 12; area = area.parentElement, i++) {
+      const field = Array.from(area.querySelectorAll(EDITABLE)).find(f => editable(f) && f.tagName !== 'INPUT');
+      if (field) return empty(field) ? field : null;
     }
-    return box;
-  }
-  function enterIcon(field, box) {
-    const row = field.getBoundingClientRect();
-    let bestRect = null;
-    for (const el of box.querySelectorAll('*')) {
-      const graphic = /^(svg|img|kbd)$/i.test(el.tagName) || ICON_TEXT.test((el.textContent || '').trim());
-      if (!graphic || el.closest(SEND + ', a')) continue;
-      if (field.contains(el) && !el.closest('[contenteditable="false"]')) continue;
-      if (el.parentElement && el.parentElement.closest('svg')) continue; // parts of an svg
-      const rect = el.getBoundingClientRect();
-      if (!rect.width || rect.width > 48 || rect.height > 48) continue;
-      const middle = (rect.top + rect.bottom) / 2;
-      if (middle < row.top - 24 || middle > row.bottom + 24) continue;
-      if (!bestRect || rect.left > bestRect.left) bestRect = rect; // the rightmost
-    }
-    return bestRect;
-  }
-  function iconTap(target, x, y) {
-    if (!(target instanceof Element) || target.closest(SEND + ', a')) return null;
-    const box = boxOf(target);
-    if (!box) return null;
-    const field = editable(target) && target.tagName !== 'INPUT' ? target
-      : Array.from(box.querySelectorAll(EDITABLE)).find(f => editable(f) && f.tagName !== 'INPUT');
-    if (!field || !empty(field)) return null;
-    const icon = enterIcon(field, boxOf(field) || box);
-    if (!icon) return null;
-    const on = x >= icon.left - SLOP_PX && x <= icon.right + SLOP_PX
-      && y >= icon.top - SLOP_PX && y <= icon.bottom + SLOP_PX;
-    return on ? field : null;
+    return null;
   }
 
   document.addEventListener('touchstart', event => {
     if (event.touches.length !== 1) return;
-    const point = event.touches[0];
-    const field = iconTap(event.target, point.clientX, point.clientY);
+    const field = iconTap(event.target);
     if (!field) return;
     event.preventDefault(); // No tap on the field: no keyboard.
     event.stopImmediatePropagation();
