@@ -51,11 +51,14 @@
     if (event.isComposing || event.keyCode === 229) return;
     const field = event.target;
     if (!editable(field) || field.tagName === 'INPUT') return;
+    // An empty box: Enter is Claude's own (e.g. it sends the suggested prompt shown there).
+    const text = field.tagName === 'TEXTAREA' ? field.value : field.textContent;
+    if (!(text || '').trim()) return;
     const buttons = sendButtons(field);
     if (!buttons.length) return; // No Send button here (e.g. Claude is replying): a new line.
     event.preventDefault();
     event.stopImmediatePropagation();
-    // A disabled Send (empty message) means nothing to send, and no new line either.
+    // A disabled Send (e.g. an upload in progress) means nothing to send, and no new line either.
     const send = buttons.find(b => !b.disabled && b.getClientRects().length);
     if (send) send.click();
   }, true);

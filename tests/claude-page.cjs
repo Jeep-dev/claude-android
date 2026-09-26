@@ -70,6 +70,8 @@ assert.equal(document.activeElement, editor, 'touching the message box opens the
 document.listeners.focusin.forEach(h => h({ target: editor }));
 assert.equal(editor.getAttribute('enterkeyhint'), 'send', 'keyboard shows a Send key');
 
+assert.equal(key({}), false, 'empty box: Enter is left to Claude (suggested prompt)');
+editor.textContent = 'hello';
 assert.equal(key({}), true, 'Enter is taken over');
 assert.equal(send.clicks, 2, 'Enter sends');
 flush();
@@ -80,8 +82,8 @@ assert.equal(key({ shiftKey: true }), false, 'Shift+Enter makes a new line');
 assert.equal(key({ isComposing: true }), false, 'Enter confirming an IME candidate');
 assert.equal(key({ keyCode: 229 }), false, 'IME Enter (keyCode 229)');
 send.disabled = true;
-assert.equal(key({}), true, 'empty message: no new line');
-assert.equal(send.clicks, 2, 'empty message: nothing sent');
+assert.equal(key({}), true, 'Send disabled: no new line');
+assert.equal(send.clicks, 2, 'Send disabled: nothing sent');
 send.attrs['aria-label'] = 'Stop response';
 assert.equal(key({}), false, 'no Send button (Claude replying): Enter is a new line');
 console.log('claude-page: all tests passed');
