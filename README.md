@@ -16,6 +16,9 @@ WebView runs with its default behaviour.
 - The status bar takes Claude's background colour (set by Claude's own theme setting: dark
   page, dark status bar; light page, light status bar), with icons to match. The navigation
   bar stays white.
+- WebRTC peer connections are removed (`assets/no-webrtc.js`, run in every page and frame
+  before page scripts through `androidx.webkit` document-start scripts), so no page can open
+  direct connections that may bypass a proxy or reveal IP addresses. The microphone still works.
 - The keyboard opens only after the page is touched: until then a container holds focus,
   so Claude focusing its message box on load or on return opens no keyboard.
 - `assets/claude-page.js` (claude.ai only): Claude's scripted focus of a text field is ignored

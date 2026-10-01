@@ -30,3 +30,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    // Document-start scripts (WebRTC removal before page scripts run).
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

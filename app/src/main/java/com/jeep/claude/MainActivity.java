@@ -30,6 +30,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 /** Claude in a plain WebView. Other websites open in the system browser. */
 public final class MainActivity extends Activity {
@@ -62,6 +66,10 @@ public final class MainActivity extends Activity {
         settings.setOffscreenPreRaster(true);
         CookieManager.getInstance().setAcceptCookie(true);
 
+        // WebRTC peer connections off in every page and frame, before any page script runs.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(web, asset("no-webrtc.js"), Collections.singleton("*"));
+        }
         web.addJavascriptInterface(new StatusBar(), "ClaudeStatusBar");
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
@@ -148,17 +156,19 @@ public final class MainActivity extends Activity {
 
     /** assets/claude-page.js: keyboard behaviour on claude.ai (no auto keyboard, Enter sends). */
     private String pageScript() {
-        if (pageScript == null) {
-            try (InputStream in = getAssets().open("claude-page.js")) {
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buffer = new byte[8192];
-                for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
-                pageScript = out.toString(StandardCharsets.UTF_8.name());
-            } catch (IOException e) {
-                pageScript = "";
-            }
-        }
+        if (pageScript == null) pageScript = asset("claude-page.js");
         return pageScript;
+    }
+
+    private String asset(String name) {
+        try (InputStream in = getAssets().open(name)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (IOException e) {
+            return "";
+        }
     }
 
     private final class Client extends WebViewClient {
