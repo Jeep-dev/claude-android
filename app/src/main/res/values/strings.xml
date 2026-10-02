@@ -2,5 +2,6 @@
     <string name="app_name">Claude</string>
     <string name="no_app">No app can open this link.</string>
     <string name="download_started">Downloading…</string>
+    <string name="download_saved">Saved to Downloads: %1$s</string>
     <string name="download_failed">This file cannot be downloaded here.</string>
 </resources>

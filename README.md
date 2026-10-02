@@ -8,8 +8,10 @@ WebView runs with its default behaviour.
   every other link opens in the system browser. Embedded frames load normally.
 - File uploads open the system file picker directly. The microphone is requested only when Claude
   starts voice dictation.
-- `https` downloads go to Downloads through the system download manager. Downloads that
-  exist only inside the page (`blob:`) are not supported.
+- `https` downloads go to Downloads through the system download manager. Files made inside the
+  page (`blob:`/`data:` links with a download name, e.g. Claude's ZIP and Markdown export)
+  are read by the page script and passed to the app over a channel only claude.ai frames get
+  (`androidx.webkit` web message listener), then saved to Downloads.
 - Returning from the background shows the page at once: rendered content is kept
   (offscreen pre-raster) and Chromium is not told the window was hidden, so Claude does not
   refresh. Costs some memory, and a streaming reply keeps running in the background.

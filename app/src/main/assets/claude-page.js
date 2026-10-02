@@ -110,6 +110,57 @@
     }
   }, true);
 
+  // Files Claude makes in the page (blob: or data: links with a download name, e.g. the ZIP
+  // and Markdown export) cannot go through the system download manager. They are read here
+  // and handed to the app in chunks, which saves them to Downloads.
+  const saver = window.ClaudeDownload;
+  if (saver && window.FileReader && window.Blob) {
+    const blobs = new Map();
+    const createURL = URL.createObjectURL;
+    URL.createObjectURL = function (object) {
+      const url = createURL.call(URL, object);
+      if (object instanceof Blob) blobs.set(url, object);
+      return url;
+    };
+    const revokeURL = URL.revokeObjectURL;
+    URL.revokeObjectURL = function (url) {
+      setTimeout(() => blobs.delete(url), 60000); // a download may still be reading it
+      return revokeURL.call(URL, url);
+    };
+    const CHUNK = 512 * 1024;
+    async function send(blob, name) {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+      saver.postMessage(JSON.stringify({ t: 'begin', id, name, type: blob.type || '' }));
+      for (let at = 0; at < blob.size; at += CHUNK) {
+        const bytes = new Uint8Array(await blob.slice(at, at + CHUNK).arrayBuffer());
+        let text = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        saver.postMessage(JSON.stringify({ t: 'data', id, b64: btoa(text) }));
+      }
+      saver.postMessage(JSON.stringify({ t: 'end', id, name }));
+    }
+    // True when the link is a page-made file that is now being saved.
+    function save(link) {
+      const href = link.href || '';
+      if (!link.hasAttribute('download') || !/^(blob|data):/.test(href)) return false;
+      const name = link.getAttribute('download') || 'download';
+      const known = blobs.get(href);
+      (known ? Promise.resolve(known) : fetch(href).then(r => r.blob()))
+        .then(blob => send(blob, name))
+        .catch(() => saver.postMessage(JSON.stringify({ t: 'end', id: 'failed', name })));
+      return true;
+    }
+    const clickLink = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (save(this)) return;
+      return clickLink.call(this);
+    };
+    document.addEventListener('click', event => {
+      const link = event.target instanceof Element && event.target.closest('a[download]');
+      if (link && save(link)) event.preventDefault();
+    }, true);
+  }
+
   // The status bar takes Claude's background colour, so it follows the Claude theme setting.
   const bar = window.ClaudeStatusBar;
   if (bar && window.getComputedStyle && window.MutationObserver) {

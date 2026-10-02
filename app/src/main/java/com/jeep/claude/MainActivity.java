@@ -4,13 +4,17 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -27,11 +31,21 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import androidx.webkit.WebMessageCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -46,6 +60,7 @@ public final class MainActivity extends Activity {
     private String pageScript;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingMicrophone;
+    private final ExecutorService saving = Executors.newSingleThreadExecutor();
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -69,6 +84,13 @@ public final class MainActivity extends Activity {
         // WebRTC peer connections off in every page and frame, before any page script runs.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(web, asset("no-webrtc.js"), Collections.singleton("*"));
+        }
+        // Files Claude makes in the page (blob:, e.g. ZIP/Markdown export) come in from the page
+        // script; only claude.ai frames get this channel.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(web, "ClaudeDownload",
+                    Collections.singleton("https://claude.ai"),
+                    (view, message, origin, mainFrame, reply) -> receive(message));
         }
         web.addJavascriptInterface(new StatusBar(), "ClaudeStatusBar");
         web.setWebViewClient(new Client());
@@ -152,6 +174,84 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException e) {
             Toast.makeText(this, R.string.download_failed, Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * A page-made file arrives as JSON messages: {t:"begin", id, name, type}, then
+     * {t:"data", id, b64} chunks, then {t:"end", id}. It is written to the cache, then saved
+     * to Downloads.
+     */
+    private void receive(WebMessageCompat message) {
+        String data = message.getData();
+        if (data == null) return;
+        saving.execute(() -> {
+            try {
+                JSONObject m = new JSONObject(data);
+                String id = m.getString("id").replaceAll("[^A-Za-z0-9]", "");
+                if (id.isEmpty()) return;
+                File part = new File(getCacheDir(), "download-" + id);
+                switch (m.getString("t")) {
+                    case "begin":
+                        try (FileOutputStream out = new FileOutputStream(part)) { /* empty file */ }
+                        break;
+                    case "data":
+                        try (FileOutputStream out = new FileOutputStream(part, true)) {
+                            out.write(Base64.decode(m.getString("b64"), Base64.DEFAULT));
+                        }
+                        break;
+                    case "end":
+                        String name = safeName(m.optString("name", "download"));
+                        String saved = part.isFile()
+                                ? saveToDownloads(part, name, m.optString("type", "")) : null;
+                        part.delete();
+                        runOnUiThread(() -> Toast.makeText(this, saved != null
+                                ? getString(R.string.download_saved, saved)
+                                : getString(R.string.download_failed), Toast.LENGTH_SHORT).show());
+                        break;
+                    default:
+                        break;
+                }
+            } catch (JSONException | IOException | IllegalArgumentException e) {
+                runOnUiThread(() -> Toast.makeText(this, R.string.download_failed, Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private static String safeName(String name) {
+        String clean = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+        if (clean.isEmpty() || clean.equals(".") || clean.equals("..")) clean = "download";
+        return clean.length() > 120 ? clean.substring(clean.length() - 120) : clean;
+    }
+
+    /** Copies the file into the public Downloads folder; returns the name it got, or null. */
+    private String saveToDownloads(File file, String name, String type) throws IOException {
+        if (Build.VERSION.SDK_INT >= 29) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, name);
+            if (!type.isEmpty()) values.put(MediaStore.Downloads.MIME_TYPE, type);
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return null;
+            try (InputStream in = new FileInputStream(file);
+                 OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) return null;
+                copy(in, out);
+            }
+            return name;
+        }
+        // Android 8-9: the app's own Downloads folder (no storage permission needed).
+        File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (dir == null) return null;
+        File target = new File(dir, name);
+        try (InputStream in = new FileInputStream(file); OutputStream out = new FileOutputStream(target)) {
+            copy(in, out);
+        }
+        return target.getPath();
+    }
+
+    private static void copy(InputStream in, OutputStream out) throws IOException {
+        byte[] buffer = new byte[64 * 1024];
+        for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
     }
 
     /** assets/claude-page.js: keyboard behaviour on claude.ai (no auto keyboard, Enter sends). */
@@ -280,6 +380,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        saving.shutdown();
         web.destroy();
         super.onDestroy();
     }
