@@ -139,10 +139,17 @@
       }
       saver.postMessage(JSON.stringify({ t: 'end', id, name }));
     }
-    // True when the link is a page-made file that is now being saved.
+    // True when the link is a page-made file that is now being saved. A link to a file on the
+    // web keeps its normal download; the app only learns the name the page gave it.
     function save(link) {
       const href = link.href || '';
-      if (!link.hasAttribute('download') || !/^(blob|data):/.test(href)) return false;
+      if (!link.hasAttribute('download')) return false;
+      if (/^https:/.test(href)) {
+        const given = link.getAttribute('download');
+        if (given) saver.postMessage(JSON.stringify({ t: 'name', url: href, name: given }));
+        return false;
+      }
+      if (!/^(blob|data):/.test(href)) return false;
       const name = link.getAttribute('download') || 'download';
       const known = blobs.get(href);
       (known ? Promise.resolve(known) : fetch(href).then(r => r.blob()))

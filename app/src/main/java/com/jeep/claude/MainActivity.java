@@ -37,10 +37,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -61,6 +66,10 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingMicrophone;
     private final ExecutorService saving = Executors.newSingleThreadExecutor();
+    /** Download names the page gave its links (<a download="name">), by URL. */
+    private final Map<String, String> linkNames = new ConcurrentHashMap<>();
+    /** Downloads go to Download/Claude. */
+    private static final String FOLDER = "Claude";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -160,12 +169,12 @@ public final class MainActivity extends Activity {
             return;
         }
         try {
-            String name = URLUtil.guessFileName(url, disposition, mimeType);
+            String name = safeName(fileName(url, disposition, mimeType));
             DownloadManager.Request request = new DownloadManager.Request(uri)
                     .setMimeType(mimeType)
                     .addRequestHeader("User-Agent", userAgent)
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, FOLDER + "/" + name);
             // The cookies go only to the host that is being downloaded from.
             String cookies = CookieManager.getInstance().getCookie(url);
             if (cookies != null && inApp(uri)) request.addRequestHeader("Cookie", cookies);
@@ -176,6 +185,51 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private static final Pattern EXTENDED_NAME =
+            Pattern.compile("filename\\*\\s*=\\s*([^';]*)'[^']*'([^;]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PLAIN_NAME =
+            Pattern.compile("filename\\s*=\\s*(\"([^\"]*)\"|[^;]+)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The file's name: the one the page gave the link, else the server's Content-Disposition
+     * (also the filename*=UTF-8''… form Android's own guess does not read, which left names
+     * like "contents"), else Android's guess from the URL and type.
+     */
+    private String fileName(String url, String disposition, String mimeType) {
+        String fromPage = linkNames.remove(url);
+        if (fromPage != null && !fromPage.trim().isEmpty()) return fromPage;
+        if (disposition != null) {
+            Matcher extended = EXTENDED_NAME.matcher(disposition);
+            if (extended.find()) {
+                try {
+                    String charset = extended.group(1).trim().isEmpty() ? "UTF-8" : extended.group(1).trim();
+                    return URLDecoder.decode(extended.group(2).trim().replace("+", "%2B"), charset);
+                } catch (IOException | IllegalArgumentException ignored) {
+                }
+            }
+            Matcher plain = PLAIN_NAME.matcher(disposition);
+            if (plain.find()) {
+                String name = plain.group(2) != null ? plain.group(2) : plain.group(1).trim();
+                if (!name.isEmpty()) return utf8(name);
+            }
+        }
+        return URLUtil.guessFileName(url, disposition, mimeType);
+    }
+
+    /** A UTF-8 name that arrived read as Latin-1 (mojibake) is read again as UTF-8. */
+    private static String utf8(String name) {
+        boolean latin1 = true;
+        boolean high = false;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c > 0xFF) latin1 = false;
+            if (c >= 0x80) high = true;
+        }
+        if (!latin1 || !high) return name;
+        String again = new String(name.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+        return again.indexOf('\uFFFD') >= 0 ? name : again;
+    }
+
     /**
      * A page-made file arrives as JSON messages: {t:"begin", id, name, type}, then
      * {t:"data", id, b64} chunks, then {t:"end", id}. It is written to the cache, then saved
@@ -184,6 +238,18 @@ public final class MainActivity extends Activity {
     private void receive(WebMessageCompat message) {
         String data = message.getData();
         if (data == null) return;
+        // <a download="name" href="https://…"> about to download: remember the name at once,
+        // before the download itself reaches download().
+        try {
+            JSONObject m = new JSONObject(data);
+            if ("name".equals(m.optString("t"))) {
+                if (linkNames.size() > 50) linkNames.clear();
+                linkNames.put(m.getString("url"), m.getString("name"));
+                return;
+            }
+        } catch (JSONException e) {
+            return;
+        }
         saving.execute(() -> {
             try {
                 JSONObject m = new JSONObject(data);
@@ -229,7 +295,7 @@ public final class MainActivity extends Activity {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Downloads.DISPLAY_NAME, name);
             if (!type.isEmpty()) values.put(MediaStore.Downloads.MIME_TYPE, type);
-            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER);
             Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
             if (uri == null) return null;
             try (InputStream in = new FileInputStream(file);
@@ -240,8 +306,8 @@ public final class MainActivity extends Activity {
             return name;
         }
         // Android 8-9: the app's own Downloads folder (no storage permission needed).
-        File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-        if (dir == null) return null;
+        File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER);
+        if (dir == null || !(dir.isDirectory() || dir.mkdirs())) return null;
         File target = new File(dir, name);
         try (InputStream in = new FileInputStream(file); OutputStream out = new FileOutputStream(target)) {
             copy(in, out);
