@@ -34,7 +34,8 @@ WebView runs with its default behaviour.
   suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. With only an
   attachment Send is enabled, and Enter sends. After sending, the
   keyboard closes. The keyboard shows a Send key for message boxes.
-- Back goes back in the page; at the start it moves the app to the background.
+- Back (button or edge swipe) moves the app to the background, back to the home screen; it
+  never goes back within the page.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.
 
 Builds: every push builds a signed APK (GitHub Actions artifact); `main` also publishes a

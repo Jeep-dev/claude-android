@@ -428,9 +428,9 @@ public final class MainActivity extends Activity {
         pendingMicrophone = null;
     }
 
+    /** Back (button or edge swipe) goes to the home screen; the page keeps its place. */
     @Override public void onBackPressed() {
-        if (web.canGoBack()) web.goBack();
-        else moveTaskToBack(true);
+        moveTaskToBack(true);
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
