@@ -57,6 +57,7 @@ import androidx.webkit.WebViewFeature;
 /** Claude in a plain WebView. Other websites open in the system browser. */
 public final class MainActivity extends Activity {
     private static final String HOME = "https://claude.ai/code";
+    private static final String LAST_PAGE = "last_page";
     private static final int CHOOSE_FILE = 1;
     private static final int ASK_MICROPHONE = 2;
 
@@ -107,7 +108,19 @@ public final class MainActivity extends Activity {
         web.setDownloadListener((url, userAgent, disposition, mimeType, length) ->
                 download(url, userAgent, disposition, mimeType));
 
-        if (state == null || web.restoreState(state) == null) web.loadUrl(HOME);
+        if (state == null || web.restoreState(state) == null) web.loadUrl(startUrl());
+    }
+
+    /** The Claude page open when the app was last left, else Claude Code. */
+    private String startUrl() {
+        String last = getPreferences(MODE_PRIVATE).getString(LAST_PAGE, null);
+        return last != null && isClaude(Uri.parse(last)) ? last : HOME;
+    }
+
+    private static boolean isClaude(Uri uri) {
+        String host = uri.getHost();
+        return "https".equals(uri.getScheme()) && host != null
+                && (host.equals("claude.ai") || host.endsWith(".claude.ai"));
     }
 
     /**
@@ -443,6 +456,11 @@ public final class MainActivity extends Activity {
         // Also no keyboard of its own when returning to the app.
         root.requestFocus();
         CookieManager.getInstance().flush();
+        // Remember the Claude page (sign-in and other pages are not reopened).
+        String url = web.getUrl();
+        if (url != null && isClaude(Uri.parse(url))) {
+            getPreferences(MODE_PRIVATE).edit().putString(LAST_PAGE, url).apply();
+        }
     }
 
     @Override protected void onDestroy() {
