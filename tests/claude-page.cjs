@@ -13,6 +13,8 @@ class Element extends Node {
     if (parent) parent.children.push(this);
   }
   matches(sel) {
+    if (sel === '*') return true;
+    if (sel === 'svg') return this.tagName === 'SVG';
     if (sel.startsWith('textarea')) return this.tagName === 'TEXTAREA' || this.attrs.contenteditable === 'true';
     return this.tagName === 'BUTTON' && /send|submit/i.test(this.attrs['aria-label'] || '');
   }
@@ -24,6 +26,12 @@ class Element extends Node {
     return out;
   }
   getClientRects() { return [1]; }
+  getBoundingClientRect() {
+    return this.rect || { top: 900, bottom: 940, left: 0, right: 400, width: 400,
+      height: this.tagName === 'BODY' ? 1000 : 60 };
+  }
+  removeAttribute(k) { delete this.attrs[k]; }
+  dispatchEvent(e) { (this.events ||= []).push(e.type + ':' + e.key); }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   click() { this.clicks++; document.listeners.click.forEach(h => h({ target: this })); }
@@ -32,20 +40,24 @@ class Element extends Node {
 class HTMLElement extends Element {}
 HTMLElement.prototype.focus = function () { document.activeElement = this; };
 
-const document = { listeners: { click: [], keydown: [], focusin: [] },
+const document = { listeners: { click: [], keydown: [], focusin: [], touchstart: [] },
   addEventListener(t, h) { (this.listeners[t] ||= []).push(h); } };
 const body = new HTMLElement('body');
 const link = new HTMLElement('a', new HTMLElement('nav', body));
 const composer = new HTMLElement('div', body);
 const editor = new HTMLElement('div', new HTMLElement('div', composer), { contenteditable: 'true' });
 const send = new HTMLElement('button', new HTMLElement('div', composer), { 'aria-label': 'Send message' });
+const hint = new HTMLElement('svg', composer);
+hint.rect = { top: 910, bottom: 930, left: 370, right: 390, width: 20, height: 20 };
+editor.rect = { top: 900, bottom: 940, left: 20, right: 360, width: 340, height: 40 };
 document.activeElement = body;
 
 let now = 0;
 const timers = [];
 const windowListeners = {};
-const window = { addEventListener: (t, h) => { windowListeners[t] = h; } };
-vm.runInNewContext(script, { window, document, HTMLElement, Element, Node,
+const window = { innerHeight: 1000, addEventListener: (t, h) => { windowListeners[t] = h; } };
+class KeyboardEvent { constructor(type, init) { this.type = type; Object.assign(this, init); } }
+vm.runInNewContext(script, { window, document, HTMLElement, Element, Node, KeyboardEvent,
   Date: { now: () => now }, setTimeout: fn => timers.push(fn) });
 const tap = target => windowListeners.pointerdown({ target });
 const flush = () => { while (timers.length) timers.shift()(); };
@@ -70,8 +82,20 @@ assert.equal(document.activeElement, editor, 'touching the message box opens the
 document.listeners.focusin.forEach(h => h({ target: editor }));
 assert.equal(editor.getAttribute('enterkeyhint'), 'send', 'keyboard shows a Send key');
 
+editor.textContent = '';
+send.disabled = true;
+assert.equal(key({}), true, 'empty box: Enter is taken over');
+assert.deepEqual(editor.events, ['keydown:Tab', 'keyup:Tab'], 'empty box, Send disabled: Enter presses Tab');
+assert.equal(send.clicks, 1, '...and sends nothing');
+editor.events = [];
+send.disabled = false;
+assert.equal(key({}), true, 'only an attachment (Send enabled): Enter is taken over');
+assert.equal(send.clicks, 2, '...and sends');
+assert.equal(editor.events.length, 0, '...without pressing Tab');
+editor.textContent = 'hello';
+document.activeElement = editor;
 assert.equal(key({}), true, 'Enter is taken over');
-assert.equal(send.clicks, 2, 'Enter sends');
+assert.equal(send.clicks, 3, 'Enter sends');
 flush();
 assert.equal(document.activeElement, body, 'keyboard closes after sending');
 
@@ -80,8 +104,8 @@ assert.equal(key({ shiftKey: true }), false, 'Shift+Enter makes a new line');
 assert.equal(key({ isComposing: true }), false, 'Enter confirming an IME candidate');
 assert.equal(key({ keyCode: 229 }), false, 'IME Enter (keyCode 229)');
 send.disabled = true;
-assert.equal(key({}), true, 'empty message: no new line');
-assert.equal(send.clicks, 2, 'empty message: nothing sent');
+assert.equal(key({}), true, 'Send disabled: no new line');
+assert.equal(send.clicks, 3, 'Send disabled: nothing sent');
 send.attrs['aria-label'] = 'Stop response';
 assert.equal(key({}), false, 'no Send button (Claude replying): Enter is a new line');
 console.log('claude-page: all tests passed');
