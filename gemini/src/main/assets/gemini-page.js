@@ -158,6 +158,17 @@
     }, true);
   }
 
+  // Tell the app while Gemini writes a reply (the Stop button stands in for Send), so the app
+  // keeps running in the background until the reply is complete.
+  const reply = window.GeminiReply;
+  if (reply) {
+    let busy = false;
+    setInterval(() => {
+      const now = !!document.querySelector('.send-button.stop');
+      if (now !== busy) { busy = now; reply.busy(now); }
+    }, 500);
+  }
+
   // The status bar takes the colour at the top of the page, so it follows Gemini's theme.
   const bar = window.GeminiStatusBar;
   if (bar && window.getComputedStyle && window.MutationObserver) {

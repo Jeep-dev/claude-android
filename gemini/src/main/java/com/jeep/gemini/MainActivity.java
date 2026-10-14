@@ -109,6 +109,9 @@ public final class MainActivity extends Activity {
                     (view, message, origin, mainFrame, reply) -> receive(message));
         }
         web.addJavascriptInterface(new StatusBar(), "GeminiStatusBar");
+        web.addJavascriptInterface(new Reply(), "GeminiReply");
+        // The page's renderer keeps its priority in the background, so a reply keeps streaming.
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
         web.setDownloadListener((url, userAgent, disposition, mimeType, length) ->
@@ -141,6 +144,16 @@ public final class MainActivity extends Activity {
     }
 
     /** The page script reports Gemini's background colour; the status bar takes it. */
+    /** The page reports when Gemini starts and stops writing a reply. */
+    private final class Reply {
+        @JavascriptInterface public void busy(boolean busy) {
+            runOnUiThread(() -> {
+                if (busy) ReplyService.start(MainActivity.this);
+                else ReplyService.stop(MainActivity.this);
+            });
+        }
+    }
+
     private final class StatusBar {
         @JavascriptInterface public void setColor(int rgb) {
             int color = rgb | 0xFF000000;
@@ -464,6 +477,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        ReplyService.stop(this);
         saving.shutdown();
         web.destroy();
         super.onDestroy();
