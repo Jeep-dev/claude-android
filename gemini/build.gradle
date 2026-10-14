@@ -1,0 +1,37 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.jeep.gemini'
+    compileSdk 34
+    defaultConfig {
+        // Signed with the same key as the Claude app; its own application id.
+        applicationId 'com.jeep.gemini'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('CLAUDE_KEYSTORE_FILE') ?: 'missing.jks')
+            storePassword System.getenv('CLAUDE_KEYSTORE_PASSWORD') ?: ''
+            keyAlias 'claude'
+            keyPassword System.getenv('CLAUDE_KEY_PASSWORD') ?: ''
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Document-start scripts (WebRTC removal before page scripts run).
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

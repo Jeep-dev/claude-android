@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pixel four-point sparkle, inside the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#4A7BF2" android:pathData="M51.70,24.10h4.60v4.65h-4.60zM51.70,28.70h4.60v4.65h-4.60zM47.10,33.30h13.80v4.65h-13.80zM47.10,37.90h13.80v4.65h-13.80zM42.50,42.50h23.00v4.65h-23.00zM37.90,47.10h32.20v4.65h-32.20zM24.10,51.70h59.80v4.65h-59.80zM37.90,56.30h32.20v4.65h-32.20zM42.50,60.90h23.00v4.65h-23.00zM47.10,65.50h13.80v4.65h-13.80zM47.10,70.10h13.80v4.65h-13.80zM51.70,74.70h4.60v4.65h-4.60zM51.70,79.30h4.60v4.65h-4.60z" />
+</vector>

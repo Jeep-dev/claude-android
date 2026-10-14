@@ -39,6 +39,28 @@ WebView runs with its default behaviour.
   never goes back within the page.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.
 
-Builds: every push builds a signed APK (GitHub Actions artifact); `main` also publishes a
-release `v<versionName>` once per version. The signing key and application id
+## Gemini for Android (v1.0.0)
+
+The `gemini` module: Gemini (https://gemini.google.com/app) in the same plain WebView, built the
+same way (`gemini/`, application id `com.jeep.gemini`, installs next to Claude). It reopens the
+Gemini page last left. Like Claude, with these differences:
+
+- Gemini (`gemini.google.com`) and Google sign-in (`accounts.google.com`, `accounts.youtube.com`,
+  `consent.google.com`, `gds.google.com`) open in the app; every other link opens in the system
+  browser. Third-party cookies are on, for the Google account menu Gemini shows in a frame.
+- The user agent leaves out the WebView marks (`; wv`, `Version/4.0`), so Google allows sign-in.
+- Downloads go to Download/Gemini; page-made files (e.g. generated images) arrive over
+  `GeminiDownload`, a channel only `gemini.google.com` frames get.
+- The status bar takes the colour at the top of the page, so it follows Gemini's theme.
+- `assets/gemini-page.js` (gemini.google.com only): no keyboard from scripted focus; Enter clicks
+  Gemini's Send button (also when it is marked `aria-disabled`, it then does nothing),
+  Shift+Enter makes a new line, IME Enter only confirms; with the Stop button in place of Send
+  (Gemini replying) Enter is a new line. After sending, the keyboard closes. No Tab step: Gemini
+  has no suggested prompt to take.
+- Microphone, file picker, WebRTC removal, keyboard held back until the page is touched,
+  background rendering kept and Back to the home screen: as in Claude.
+
+Builds: every push builds both signed APKs (GitHub Actions artifacts); `main` also publishes a
+release once per version: `v<versionName>` for Claude, `gemini-v<versionName>` for Gemini (both
+signed with the same key). The Claude signing key and application id
 (`com.jeep.claude`) are the same as earlier versions, so it installs over them.

@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APKs
 on:
   push:
   workflow_dispatch:
@@ -9,8 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test page script
-        run: node tests/claude-page.cjs
+      - name: Test page scripts
+        run: |
+          node tests/claude-page.cjs
+          node tests/gemini-page.cjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -18,7 +20,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
-      - name: Build signed release APK
+      - name: Build signed release APKs
         env:
           KEY_B64: ${{ secrets.CLAUDE_KEYSTORE_B64 }}
           CLAUDE_KEYSTORE_PASSWORD: ${{ secrets.CLAUDE_KEYSTORE_PASSWORD }}
@@ -26,16 +28,24 @@ jobs:
         run: |
           printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/app.jks"
           export CLAUDE_KEYSTORE_FILE="$RUNNER_TEMP/app.jks"
-          gradle --no-daemon :app:assembleRelease
+          gradle --no-daemon :app:assembleRelease :gemini:assembleRelease
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify gemini/build/outputs/apk/release/gemini-release.apk
           VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" app/build.gradle)
+          GEMINI_VERSION=$(sed -n "s/^ *versionName '\(.*\)'.*/\1/p" gemini/build.gradle)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "GEMINI_VERSION=$GEMINI_VERSION" >> "$GITHUB_ENV"
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/Claude-v$VERSION.apk"
+          cp gemini/build/outputs/apk/release/gemini-release.apk "out/Gemini-v$GEMINI_VERSION.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: claude-v${{ env.VERSION }}
           path: out/Claude-v${{ env.VERSION }}.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gemini-v${{ env.GEMINI_VERSION }}
+          path: out/Gemini-v${{ env.GEMINI_VERSION }}.apk
       - name: Publish release for main
         if: github.ref == 'refs/heads/main'
         env:
@@ -46,4 +56,10 @@ jobs:
           else
             gh release create "v$VERSION" "out/Claude-v$VERSION.apk" --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --title "Claude v$VERSION" --notes "Claude in a plain Android WebView."
+          fi
+          if gh release view "gemini-v$GEMINI_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release gemini-v$GEMINI_VERSION already exists; bump the Gemini versionName to publish."
+          else
+            gh release create "gemini-v$GEMINI_VERSION" "out/Gemini-v$GEMINI_VERSION.apk" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Gemini v$GEMINI_VERSION" --notes "Gemini in a plain Android WebView." --latest=false
           fi
