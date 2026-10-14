@@ -14,10 +14,11 @@ class Element extends Node {
   }
   matches(sel) {
     if (sel.startsWith('textarea')) return this.tagName === 'TEXTAREA' || this.attrs.contenteditable === 'true';
+    if (sel === 'rich-textarea') return this.tagName === 'RICH-TEXTAREA';
     if (this.tagName !== 'BUTTON') return false;
-    const cls = (this.attrs.class || '').split(' ');
-    return (cls.includes('send-button') && !cls.includes('stop'))
-      || /send|submit|发送/i.test(this.attrs['aria-label'] || '');
+    // .send-button:not(.stop) button: the wrapper's classes decide, not the localized label.
+    const cls = (this.parentElement.attrs.class || '').split(' ');
+    return cls.includes('send-button') && !cls.includes('stop');
   }
   closest(sel) { for (let n = this; n; n = n.parentElement) if (n.matches(sel)) return n; return null; }
   contains(o) { for (let n = o; n; n = n.parentElement) if (n === this) return true; return false; }
@@ -44,8 +45,10 @@ const inputArea = new HTMLElement('input-area-v2', body);
 let inner = inputArea;
 for (let i = 0; i < 6; i++) inner = new HTMLElement('div', inner);
 const editor = new HTMLElement('div', new HTMLElement('rich-textarea', inner), { contenteditable: 'true' });
-const send = new HTMLElement('button', new HTMLElement('div', inputArea),
-  { class: 'send-button', 'aria-label': '发送' });
+// Gemini's real structure: <gem-icon-button class="send-button submit"><button aria-label="…">.
+const wrapper = new HTMLElement('gem-icon-button', inner.parentElement.parentElement,
+  { class: 'send-button submit' });
+const send = new HTMLElement('button', wrapper, { 'aria-label': 'プロンプトを送信' });
 document.activeElement = body;
 
 let now = 0;
@@ -77,6 +80,7 @@ assert.equal(document.activeElement, editor, 'touching the message box opens the
 document.listeners.focusin.forEach(h => h({ target: editor }));
 assert.equal(editor.getAttribute('enterkeyhint'), 'send', 'keyboard shows a Send key');
 
+editor.textContent = 'hello';
 assert.equal(key({}), true, 'Enter is taken over');
 assert.equal(send.clicks, 2, 'Enter sends');
 flush();
@@ -94,7 +98,19 @@ send.disabled = true;
 assert.equal(key({}), true, 'Send disabled: no new line');
 assert.equal(send.clicks, 2, 'Send disabled: nothing sent');
 send.disabled = false;
-send.attrs = { class: 'send-button stop', 'aria-label': '停止回答' };
+wrapper.attrs.class = 'send-button stop';
+send.attrs['aria-label'] = '回答を停止';
 assert.equal(key({}), false, 'Stop button in place of Send (Gemini replying): Enter is a new line');
 assert.equal(send.clicks, 2);
+editor.textContent = '';
+assert.equal(key({}), true, 'empty box while replying: no new line');
+// Empty box: Gemini shows no Send button at all, only the microphone.
+wrapper.children.length = 0;
+assert.equal(key({}), true, 'empty box, no Send button: no new line');
+assert.equal(send.clicks, 2, '...and nothing sent');
+document.activeElement = body;
+document.listeners.focusin.forEach(h => h({ target: editor }));
+editor.attrs.enterkeyhint = null;
+document.listeners.focusin.forEach(h => h({ target: editor }));
+assert.equal(editor.getAttribute('enterkeyhint'), 'send', 'empty box still gets a Send key');
 console.log('gemini-page: all tests passed');

@@ -8,12 +8,15 @@
   //    just touched or a text field already has focus.
   // 2. Enter sends (clicks the message box's Send button); Shift+Enter makes a new line.
   //    Enter that confirms an input-method candidate only confirms it.
-  // 3. With nothing to send (Send disabled), Enter does nothing: no stray new line.
-  //    With no Send button (Gemini replying, the Stop button in its place) Enter is a new line.
+  // 3. In an empty box (Gemini shows no Send button then) Enter does nothing: no stray new
+  //    line. With text but the Stop button in place of Send (Gemini replying) Enter is a new line.
   // 4. After sending, the keyboard closes.
   const EDITABLE = 'textarea, input, [contenteditable]:not([contenteditable="false"])';
-  const SEND = 'button.send-button:not(.stop), button[aria-label*="send" i], button[aria-label*="submit" i], '
-    + 'button[aria-label*="发送"], button[aria-label*="傳送"], button[aria-label*="送出"]';
+  // Gemini's Send button sits in <gem-icon-button class="send-button submit">; while it replies the
+  // same wrapper holds the Stop button and has class "stop". Its label follows the UI language.
+  const SEND = '.send-button:not(.stop) button, button.send-button:not(.stop), '
+    + 'button[aria-label*="send" i], button[aria-label*="送信"], button[aria-label*="发送"], '
+    + 'button[aria-label*="傳送"], button[aria-label*="送出"]';
   const RECENT_MS = 1000;
   let touched = null;
   let touchedAt = 0;
@@ -26,12 +29,18 @@
 
   // The Send buttons next to a text field: the first ancestor that holds any decides.
   function sendButtons(field) {
-    for (let area = field.parentElement, i = 0; area && i < 12; area = area.parentElement, i++) {
+    for (let area = field.parentElement, i = 0; area && i < 8; area = area.parentElement, i++) {
       const buttons = Array.from(area.querySelectorAll(SEND));
       if (buttons.length) return buttons;
     }
     return [];
   }
+
+  // Nothing typed (Quill keeps an empty <p><br></p>).
+  const empty = field => !(field.tagName === 'TEXTAREA' ? field.value : field.textContent || '').trim();
+
+  // Gemini's message box (Quill inside <rich-textarea>).
+  const messageBox = field => !!(field.closest && field.closest('rich-textarea')) || sendButtons(field).length > 0;
 
   function closeKeyboard() {
     const field = document.activeElement;
@@ -57,12 +66,21 @@
     if (event.isComposing || event.keyCode === 229) return;
     const field = event.target;
     if (!editable(field) || field.tagName === 'INPUT') return;
+    if (!messageBox(field)) return;
     const buttons = sendButtons(field);
-    if (!buttons.length) return; // No Send button here (e.g. Gemini is replying): a new line.
+    const send = buttons.find(b => !disabled(b) && b.getClientRects().length);
+    // Text typed and nothing in the way: Enter sends it.
+    if (send) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      send.click();
+      return;
+    }
+    // Gemini replying (Stop in place of Send) with text typed: a new line.
+    if (!empty(field) && !buttons.length) return;
+    // Empty box, or Send not available yet: no new line either.
     event.preventDefault();
     event.stopImmediatePropagation();
-    const send = buttons.find(b => !disabled(b) && b.getClientRects().length);
-    if (send) send.click(); // Otherwise nothing to send yet: no new line either.
   }, true);
 
   // Sending by Enter or by tapping Send: close the keyboard once Gemini has taken the text.
@@ -77,7 +95,7 @@
   // Show a Send key on the keyboard for message boxes.
   document.addEventListener('focusin', event => {
     const field = event.target;
-    if (editable(field) && field.tagName !== 'INPUT' && sendButtons(field).length) {
+    if (editable(field) && field.tagName !== 'INPUT' && messageBox(field)) {
       field.setAttribute('enterkeyhint', 'send');
     }
   }, true);

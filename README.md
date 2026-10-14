@@ -39,7 +39,7 @@ WebView runs with its default behaviour.
   never goes back within the page.
 - Google may refuse sign-in inside a WebView (`disallowed_useragent`); sign in with email.
 
-## Gemini for Android (v1.0.0)
+## Gemini for Android (v1.0.1)
 
 The `gemini` module: Gemini (https://gemini.google.com/app) in the same plain WebView, built the
 same way (`gemini/`, application id `com.jeep.gemini`, installs next to Claude). It reopens the
@@ -53,10 +53,11 @@ Gemini page last left. Like Claude, with these differences:
   `GeminiDownload`, a channel only `gemini.google.com` frames get.
 - The status bar takes the colour at the top of the page, so it follows Gemini's theme.
 - `assets/gemini-page.js` (gemini.google.com only): no keyboard from scripted focus; Enter clicks
-  Gemini's Send button (also when it is marked `aria-disabled`, it then does nothing),
-  Shift+Enter makes a new line, IME Enter only confirms; with the Stop button in place of Send
-  (Gemini replying) Enter is a new line. After sending, the keyboard closes. No Tab step: Gemini
-  has no suggested prompt to take.
+  Gemini's Send button (found by its `send-button` wrapper, so in every UI language),
+  Shift+Enter makes a new line, IME Enter only confirms. In an empty box (Gemini then shows no
+  Send button) Enter does nothing; with text typed while Gemini replies (Stop in place of Send)
+  Enter is a new line. After sending, the keyboard closes. The keyboard shows a Send key in the
+  message box. No Tab step: Gemini has no suggested prompt to take.
 - Microphone, file picker, WebRTC removal, keyboard held back until the page is touched,
   background rendering kept and Back to the home screen: as in Claude.
 
