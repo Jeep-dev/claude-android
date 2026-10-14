@@ -161,28 +161,38 @@
   // The status bar takes the colour at the top of the page, so it follows Gemini's theme.
   const bar = window.GeminiStatusBar;
   if (bar && window.getComputedStyle && window.MutationObserver) {
-    const rgb = css => {
+    // [r, g, b, alpha] of a CSS colour; null when fully transparent.
+    const rgba = css => {
       let m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?/.exec(css);
       let c = m && [+m[1], +m[2], +m[3]];
       if (!m) {
         m = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?/.exec(css);
         c = m && [m[1] * 255, m[2] * 255, m[3] * 255];
       }
-      if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return null; // transparent
-      return c.map(v => Math.max(0, Math.min(255, Math.round(v))));
+      if (!m) return null;
+      const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+      return a > 0 ? [...c, Math.min(1, a)] : null;
     };
-    // The first opaque background from the element at the top of the page outwards.
+    // The colour seen at the top of the page: the backgrounds stacked there, down to the first
+    // opaque one, blended. The sidebar's dimming backdrop (translucent black) then darkens the
+    // page colour instead of turning the status bar black.
     const top = () => {
-      for (let el = document.elementFromPoint(window.innerWidth / 2, 1); el; el = el.parentElement) {
-        const c = rgb(getComputedStyle(el).backgroundColor);
-        if (c) return c;
+      const layers = [];
+      const stack = document.elementsFromPoint ? document.elementsFromPoint(window.innerWidth / 2, 1) : [];
+      for (const el of [...stack, document.body, document.documentElement]) {
+        const c = el && rgba(getComputedStyle(el).backgroundColor);
+        if (!c) continue;
+        layers.push(c);
+        if (c[3] >= 1) break;
       }
-      return null;
+      if (!layers.length) return null;
+      let out = [255, 255, 255];
+      for (const [r, g, b, a] of layers.reverse()) out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)];
+      return out.map(v => Math.max(0, Math.min(255, Math.round(v))));
     };
     let last = null;
     const update = () => {
-      const c = top() || (document.body && rgb(getComputedStyle(document.body).backgroundColor))
-        || rgb(getComputedStyle(document.documentElement).backgroundColor);
+      const c = top();
       if (!c) return;
       const value = (c[0] << 16) | (c[1] << 8) | c[2];
       if (value !== last) { last = value; bar.setColor(value); }
@@ -197,6 +207,10 @@
     new MutationObserver(soon).observe(document.documentElement, { attributes: true });
     if (document.body) new MutationObserver(soon).observe(document.body, { attributes: true });
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', soon);
+    // Opening or closing the sidebar or a dialog changes no <html>/<body> attribute.
+    document.addEventListener('click', soon, true);
+    document.addEventListener('transitionend', soon, true);
+    window.addEventListener('popstate', soon);
     soon();
     setTimeout(update, 1500); // the app's top bar may render after the page has loaded
   }
