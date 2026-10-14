@@ -188,7 +188,12 @@
       if (value !== last) { last = value; bar.setColor(value); }
     };
     // Gemini switches theme through classes on <html>/<body>; its colours may fade in.
-    const soon = () => { update(); setTimeout(update, 400); };
+    // Bursts of attribute changes make one check, not one forced style recalculation each.
+    let pending = 0;
+    const soon = () => {
+      if (pending) return;
+      pending = setTimeout(() => { pending = 0; update(); setTimeout(update, 400); }, 100);
+    };
     new MutationObserver(soon).observe(document.documentElement, { attributes: true });
     if (document.body) new MutationObserver(soon).observe(document.body, { attributes: true });
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', soon);
