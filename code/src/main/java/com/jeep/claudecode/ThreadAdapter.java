@@ -107,6 +107,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 for (Chat.Block b : m.blocks) {
                     // The model may send a thinking block with nothing in it: once it ends, there is nothing to show.
                     if (b.kind == Chat.Block.THINKING && !b.streaming && b.text.trim().isEmpty()) continue;
+                    // Thinking in progress is the status row's "思考中… Ns"; tapping that opens it here.
+                    if (b.kind == Chat.Block.THINKING && b.streaming && !b.open) continue;
                     int type = b.kind == Chat.Block.TEXT ? TEXT : b.kind == Chat.Block.THINKING ? THINKING
                             : b.kind == Chat.Block.TOOL ? TOOL : b.kind == Chat.Block.ERROR ? ERROR : STOPPED;
                     int gap = prev == null ? (out.isEmpty() ? 6 : 20)
@@ -171,6 +173,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             return;
         }
         h.box.removeAllViews();
+        h.box.setOnClickListener(null); // the status row's; a reused box must not keep it
+        h.box.setClickable(false);
         h.box.setPadding(0, Ui.dp(c, it.gap), 0, 0);
         h.box.setGravity(Gravity.NO_GRAVITY);
         statusRows.remove(h);
@@ -582,6 +586,10 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         h.detail = Ui.text(c, "", 12.5f, R.color.text3);
         h.detail.setPadding(Ui.dp(c, 30), Ui.dp(c, 4), 0, 0);
         h.box.addView(h.detail);
+        h.box.setOnClickListener(v -> {
+            Chat.Block b = streamingThinking();
+            if (b != null) toggle(b, h.box);
+        });
         statusRows.add(h);
         tick(h);
     }
@@ -607,6 +615,13 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         h.detail.setText(detail);
         h.detail.setVisibility(detail.isEmpty() ? View.GONE : View.VISIBLE);
         h.detail.setTextColor(Ui.color(c, detail.isEmpty() ? R.color.text3 : R.color.warn));
+    }
+
+    private Chat.Block streamingThinking() {
+        if (chat == null || chat.messages.isEmpty()) return null;
+        for (Chat.Block b : chat.messages.get(chat.messages.size() - 1).blocks)
+            if (b.kind == Chat.Block.THINKING && b.streaming) return b;
+        return null;
     }
 
     private boolean toolRunning() {
