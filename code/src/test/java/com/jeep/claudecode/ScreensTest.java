@@ -164,6 +164,30 @@ public class ScreensTest {
         idle();
         shot(root, "08-note");
 
+        // Every tool's row
+        Chat tools = new Chat("tools");
+        Chat.Msg tm = new Chat.Msg(Chat.Msg.ASSISTANT);
+        String[][] names = {{"Bash", "{\"command\":\"ls\",\"description\":\"List files\"}"}, {"Read", "{\"file_path\":\"/w/a.py\"}"},
+                {"Write", "{\"file_path\":\"/w/b.py\"}"}, {"Edit", "{\"file_path\":\"/w/c.py\"}"}, {"MultiEdit", "{\"file_path\":\"/w/d.py\"}"},
+                {"NotebookEdit", "{\"notebook_path\":\"/w/e.ipynb\"}"}, {"Glob", "{\"pattern\":\"**/*.py\"}"}, {"Grep", "{\"pattern\":\"TODO\"}"},
+                {"WebFetch", "{\"url\":\"https://example.com\"}"}, {"WebSearch", "{\"query\":\"termux python\"}"},
+                {"Task", "{\"description\":\"Explore repo\"}"}, {"TodoWrite", "{}"}, {"Skill", "{\"skill\":\"simplify\"}"}};
+        for (String[] n : names) {
+            Chat.Block b = new Chat.Block(Chat.Block.TOOL);
+            b.name = n[0];
+            b.input = new JSONObject(n[1]);
+            tm.blocks.add(b);
+        }
+        tm.done = true;
+        tools.messages.add(tm);
+        Method sw = MainActivity.class.getDeclaredMethod("switchTo", Chat.class);
+        sw.setAccessible(true);
+        sw.invoke(a, tools);
+        idle();
+        shot(root, "10-tools");
+        sw.invoke(a, chat);
+        idle();
+
         call(a, "settingsSheet");
         idle();
         Dialog d = ShadowDialog.getLatestDialog();

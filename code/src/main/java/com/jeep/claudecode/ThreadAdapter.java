@@ -338,13 +338,14 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             }
             case "Read": return new String[]{"file", name, Ui.base(i.optString("file_path"))};
             case "Write": return new String[]{"filePlus", name, Ui.base(i.optString("file_path"))};
-            case "Edit": case "MultiEdit": return new String[]{"pencil", name, Ui.base(i.optString("file_path"))};
-            case "NotebookEdit": return new String[]{"pencil", name, Ui.base(i.optString("notebook_path"))};
-            case "Glob": return new String[]{"search", name, i.optString("pattern")};
+            case "Edit": return new String[]{"pencil", name, Ui.base(i.optString("file_path"))};
+            case "MultiEdit": return new String[]{"editLines", name, Ui.base(i.optString("file_path"))};
+            case "NotebookEdit": return new String[]{"book", name, Ui.base(i.optString("notebook_path"))};
+            case "Glob": return new String[]{"folder", name, i.optString("pattern")};
             case "Grep": return new String[]{"search", name, i.optString("pattern")};
-            case "WebFetch": return new String[]{"globe", name, i.optString("url")};
+            case "WebFetch": return new String[]{"link", name, i.optString("url")};
             case "WebSearch": return new String[]{"globe", name, i.optString("query")};
-            case "Task": case "Agent": return new String[]{"spark", name, i.optString("description")};
+            case "Task": case "Agent": return new String[]{"bot", name, i.optString("description")};
             case "TodoWrite": return new String[]{"list", "TodoWrite", "Update Todos"};
             case "Skill": return new String[]{"spark", name, i.optString("skill", i.optString("command"))};
             default: return new String[]{"tool", name, ""};
@@ -361,6 +362,11 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             case "globe": return R.drawable.ic_globe;
             case "spark": return R.drawable.ic_spark;
             case "list": return R.drawable.ic_list;
+            case "editLines": return R.drawable.ic_edit_lines;
+            case "book": return R.drawable.ic_book;
+            case "folder": return R.drawable.ic_folder;
+            case "link": return R.drawable.ic_link;
+            case "bot": return R.drawable.ic_bot;
             default: return R.drawable.ic_tool;
         }
     }
