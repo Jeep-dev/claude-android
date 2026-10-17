@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 9  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 10  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -530,6 +530,8 @@ def read_config():
     base = env.get('ANTHROPIC_BASE_URL', '')
     if 'deepseek' in base and 'deepseek-v4-pro' not in models:
         models.append('deepseek-v4-pro')
+    if not base or 'anthropic.com' in base:  # Claude itself (a subscription or an API key): its model aliases
+        models += [m for m in ('opus', 'sonnet', 'haiku') if m not in models]
     return {'models': models, 'defaultModel': env.get('ANTHROPIC_MODEL'), 'baseUrl': base}
 
 

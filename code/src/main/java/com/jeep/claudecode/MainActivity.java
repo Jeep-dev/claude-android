@@ -532,7 +532,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private static String shortModel(String m) {
-        return m == null || m.isEmpty() ? "默认模型" : m.replaceAll("(?i)\\[1m\\]$", "");
+        if (m == null || m.isEmpty()) return "默认模型";
+        switch (m) { // Claude Code's model aliases
+            case "opus": return "Opus";
+            case "sonnet": return "Sonnet";
+            case "haiku": return "Haiku";
+            default: return m.replaceAll("(?i)\\[1m\\]$", "");
+        }
     }
 
     private void fillEmpty() {
@@ -873,8 +879,17 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 Chat.Msg m = chat.reply(true);
                 Chat.Block b = new Chat.Block(Chat.Block.ERROR);
                 b.title = "Claude Code 意外退出";
-                String err = data.optString("stderr").trim();
-                b.text = err.isEmpty() ? "退出码 " + data.optInt("code") : err;
+                int code = data.optInt("code");
+                // Popen gives a negative code for a signal; 9 is the system killing it.
+                String how = code == -9 ? "被系统强制结束（SIGKILL），多半是 Termux 在后台被杀"
+                        : code < 0 ? "被信号 " + (-code) + " 结束" : "退出码 " + code;
+                StringBuilder err = new StringBuilder();
+                for (String line : data.optString("stderr").split("\n")) {
+                    // Claude Code notes models it does not know (DeepSeek's) on every run: not the cause.
+                    if (line.trim().isEmpty() || line.contains("unrecognized_model")) continue;
+                    err.append('\n').append(line);
+                }
+                b.text = how + err;
                 m.blocks.add(b);
                 m.done = true;
                 m.touch();
