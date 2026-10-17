@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 12  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 13  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -495,6 +495,18 @@ def load_history(session_id):
     return {'id': session_id, 'cwd': cwd, 'title': custom, 'messages': messages}
 
 
+claude_version = ''
+
+
+def find_claude_version():
+    global claude_version
+    try:
+        out = subprocess.run([claude_path(), '--version'], capture_output=True, text=True, timeout=60).stdout
+        claude_version = out.split()[0] if out.strip() else ''
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def read_config():
     models, settings = [], {}
     try:
@@ -515,7 +527,8 @@ def read_config():
         if value and value not in models:
             models.append(value)
     base = env.get('ANTHROPIC_BASE_URL', '')
-    return {'models': models, 'defaultModel': env.get('ANTHROPIC_MODEL'), 'baseUrl': base, 'auth': auth}
+    return {'models': models, 'defaultModel': env.get('ANTHROPIC_MODEL'), 'baseUrl': base, 'auth': auth,
+            'claudeVersion': claude_version}
 
 
 def list_dirs(path):
@@ -729,9 +742,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def running_bridge():
+    """The pid of the bridge running before this one, if it still runs (not a process that got its pid since)."""
     try:
         with open(PID_FILE) as f:
             pid = int(f.read().strip())
+        with open('/proc/%d/cmdline' % pid, 'rb') as f:
+            if b'bridge.py' not in f.read():
+                return None
         return pid if pid != os.getpid() else None
     except (OSError, ValueError):
         return None
@@ -841,6 +858,7 @@ def main():
     server.daemon_threads = True
     server.token = args.token
     threading.Thread(target=reaper, daemon=True).start()
+    threading.Thread(target=find_claude_version, daemon=True).start()
     server.serve_forever()
 
 

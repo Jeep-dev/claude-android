@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.4.1)
+# Claude Code for Android (v0.4.2)
 
 Claude Code on the phone in one app, no Termux needed. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -17,7 +17,9 @@ interface is plain Android views (Java), so scrolling and text selection are the
   `assets/bridge.py` under proot as root of the userland (`IS_SANDBOX=1` lets Claude Code skip
   permission prompts as that root), with a random per-install token; it listens on
   `127.0.0.1:8766` only and rejects requests without the token. The service starts it again
-  when it dies on its own (at most three times a minute). Phone storage is shared in as
+  when it dies on its own (at most three times a minute). To stop or replace it, the service sends SIGTERM to the bridge
+  itself (proot ignores SIGTERM): the bridge ends its conversations and exits, and proot then
+  ends what is left under it. Phone storage is shared in as
   `/sdcard` once the app may read it; DNS servers come from the current network.
 - The app checks the bridge (three tries, so a busy one is not taken for dead), has the
   service start it when it is gone or of another version, and gives it 30 s to answer. When
@@ -32,6 +34,9 @@ interface is plain Android views (Java), so scrolling and text selection are the
   and `~/work` that Termux put in `Download/ccapp`, moving Termux's home paths to `/root` so old
   conversations resume. The `rish` command in Settings whitelists the app and turns off
   Android's limit on child processes.
+- Settings: the state and Claude Code's version on top with 终端, 重启 and 运行日志; then 模型服务
+  (API 设置, Claude 订阅登录, which opens the terminal running `claude`), Claude Code's launch
+  options, permissions and keeping it running, and 从 Termux 导入.
 - Settings → 终端 opens a terminal in the userland (`bash -l` as root in `/root`), built on
   Termux's terminal emulator and view (Apache 2.0): for commands, `apk add`, and interactive
   programs such as vim or `claude` itself (its `/login` for a Claude subscription). A row of

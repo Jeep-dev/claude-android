@@ -87,6 +87,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private String installError = "";
     /** Claude Code has an API key or login to use; assumed until the bridge says otherwise. */
     private boolean authSet = true;
+    private String claudeVersion = "";
     private String home = "", defaultCwd = "", cwd, model, effort, defaultModel = "";
     private final List<String> models = new ArrayList<>();
     private final List<String> commands = new ArrayList<>();
@@ -962,6 +963,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             for (int i = 0; m != null && i < m.length(); i++) models.add(m.optString(i));
             defaultModel = data.optString("defaultModel");
             authSet = data.optBoolean("auth", true);
+            claudeVersion = data.optString("claudeVersion");
             updateChrome();
             if (current.messages.isEmpty()) renderNow();
         });
@@ -1616,49 +1618,69 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private void settingsSheet() {
         if (!linked) { settingsSheet(null); return; }
-        bridge.get("/launch", (status, launch) -> settingsSheet(status == 200 ? launch : null));
+        // Claude Code's version is found a moment after the bridge starts.
+        bridge.get("/config", (st, config) -> {
+            if (st == 200) claudeVersion = config.optString("claudeVersion");
+            bridge.get("/launch", (status, launch) -> settingsSheet(status == 200 ? launch : null));
+        });
     }
 
     /** Settings; the launch options only with the bridge running (null launch). */
     private void settingsSheet(JSONObject launch) {
         Dialog sheet = sheet("设置", null);
         LinearLayout box = content(sheet);
-        LinearLayout actions = Ui.row(this);
-        TextView terminal = button("终端", true, v -> {
+
+        LinearLayout run = card(sheet);
+        LinearLayout status = Ui.row(this);
+        status.setPadding(dp(12), dp(12), dp(12), dp(12));
+        // The dot sits where the icons of the rows below do.
+        FrameLayout slot = new FrameLayout(this);
+        View dot = new View(this);
+        dot.setBackground(Ui.round(col(linked ? R.color.ok : installing || connecting ? R.color.text3 : R.color.danger), dp(5)));
+        slot.addView(dot, new FrameLayout.LayoutParams(dp(10), dp(10), Gravity.CENTER));
+        status.addView(slot, new LinearLayout.LayoutParams(dp(19), dp(19)));
+        LinearLayout texts = Ui.column(this);
+        texts.setPadding(dp(12), 0, 0, 0);
+        TextView name = Ui.text(this, "Claude Code" + (claudeVersion.isEmpty() ? "" : " " + claudeVersion), 16, R.color.text);
+        name.setTypeface(Ui.MEDIUM);
+        texts.addView(name);
+        TextView state = Ui.text(this, (linked ? "运行中" : installing ? "正在准备运行环境" : connecting ? "正在启动" : "未运行")
+                + " · 内置 Linux 环境", 12.5f, R.color.text3);
+        state.setPadding(0, dp(3), 0, 0);
+        texts.addView(state);
+        status.addView(texts, Ui.weight());
+        run.addView(status, Ui.fill());
+        option(run, R.drawable.ic_terminal, "终端", "bash，装软件、跑命令", false, () -> {
             sheet.dismiss();
-            if (!userland.ready()) { toast("运行环境还没准备好"); return; }
-            startActivity(new Intent(this, TerminalActivity.class));
+            openTerminal(null);
         });
-        actions.addView(terminal);
-        TextView restart = button("重启", false, v -> {
+        option(run, R.drawable.ic_refresh, "重启 Claude Code", "正在进行的回复会中断", false, () -> {
             sheet.dismiss();
             toast("正在重启…");
             linked = false;
             connect(true);
         });
-        actions.addView(restart);
-        Ui.margins(restart, this, 8, 0, 0, 0);
-        TextView logs = button("运行日志", false, v -> { sheet.dismiss(); logSheet(); });
-        actions.addView(logs);
-        Ui.margins(logs, this, 8, 0, 0, 0);
-        box.addView(actions, Ui.fill());
+        option(run, R.drawable.ic_list, "运行日志", null, false, () -> { sheet.dismiss(); logSheet(); });
 
         section(box, "模型服务");
         LinearLayout api = card(sheet);
         JSONObject env = settingsEnv();
         String url = env.optString("ANTHROPIC_BASE_URL");
         option(api, R.drawable.ic_link, "API 设置", url.isEmpty() ? "Anthropic 官方" : url, false, () -> { sheet.dismiss(); apiSheet(); });
-        option(api, R.drawable.ic_file, "从 Termux 导入", "原来的配置、对话记录和 ~/work", false, () -> { sheet.dismiss(); importSheet(); });
+        option(api, R.drawable.ic_bot, "Claude 订阅登录", "在终端里打开 Claude Code，输入 /login", false, () -> {
+            sheet.dismiss();
+            openTerminal("claude\r");
+        });
 
         if (launch != null) {
-            section(box, "启动命令");
+            section(box, "Claude Code");
             LinearLayout cmd = card(sheet);
             String mode = launch.optString("permissionMode", "bypassPermissions");
             String modeLabel = mode;
             for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1] + " · " + m[0];
             String prompt = launch.optString("appendSystemPrompt");
             String extra = launch.optString("extraArgs");
-            option(cmd, R.drawable.ic_terminal, "权限模式", modeLabel, false, () -> { sheet.dismiss(); permissionSheet(mode); });
+            option(cmd, R.drawable.ic_tool, "权限模式", modeLabel, false, () -> { sheet.dismiss(); permissionSheet(mode); });
             option(cmd, R.drawable.ic_spark, "追加系统提示", prompt.trim().isEmpty() ? "未设置" : oneLine(prompt), false,
                     () -> { sheet.dismiss(); textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::settingsSheet); });
             option(cmd, R.drawable.ic_edit_lines, "额外参数", extra.trim().isEmpty() ? "未设置" : extra, false,
@@ -1703,6 +1725,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 + "; device_config put activity_manager max_phantom_processes 2147483647'";
         option(keep, R.drawable.ic_copy, "复制 rish 保活命令", "白名单，并关掉安卓的子进程限制", false, () -> copy(rish));
 
+        section(box, "迁移");
+        LinearLayout move = card(sheet);
+        option(move, R.drawable.ic_file, "从 Termux 导入", "原来的配置、对话记录和 ~/work", false, () -> { sheet.dismiss(); importSheet(); });
+
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { /* none */ }
         TextView v = Ui.text(this, "v" + version, 12, R.color.text3);
@@ -1713,6 +1739,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     // ---- Claude Code's settings.json, read and written here directly ----
+
+    private void openTerminal(String input) {
+        if (!userland.ready()) { toast("运行环境还没准备好"); return; }
+        Intent i = new Intent(this, TerminalActivity.class);
+        if (input != null) i.putExtra(TerminalActivity.EXTRA_INPUT, input);
+        startActivity(i);
+    }
 
     private java.io.File settingsFile() { return userland.file(Userland.HOME + "/.claude/settings.json"); }
 
@@ -1746,6 +1779,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 for (int i = 0; m != null && i < m.length(); i++) models.add(m.optString(i));
                 defaultModel = data.optString("defaultModel");
                 authSet = data.optBoolean("auth", true);
+                claudeVersion = data.optString("claudeVersion");
                 renderNow();
             });
         }

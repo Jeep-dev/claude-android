@@ -11,6 +11,7 @@ import android.os.IBinder;
 import android.os.PowerManager;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -90,8 +91,6 @@ public final class BridgeService extends Service {
         }
         try {
             userland.writeBridge();
-            // The bridge stops the pid it finds here; one from before this process is long gone.
-            userland.file(Userland.HOME + "/.ccapp/bridge.pid").delete();
             ProcessBuilder pb = new ProcessBuilder(userland.command("python3", "/opt/ccapp/bridge.py",
                     "--token", Bridge.token(this), "--port", String.valueOf(Bridge.PORT), "--reason", "app: " + reason));
             userland.env(pb);
@@ -110,18 +109,33 @@ public final class BridgeService extends Service {
         }
     }
 
+    /**
+     * Stops the running bridge. proot ignores SIGTERM, so the bridge itself is told: it ends its
+     * conversations and exits, and proot then ends whatever is left under it and exits too.
+     */
     private void stopBridge() {
         Process p = proc;
         proc = null;
-        if (p == null || !p.isAlive()) return;
-        p.destroy(); // SIGTERM: proot ends everything under it (--kill-on-exit)
+        int pid = bridgePid();
+        if (pid > 0) android.os.Process.sendSignal(pid, 15);
+        if (p == null) return;
         try {
-            if (!p.waitFor(4, TimeUnit.SECONDS)) {
-                p.destroyForcibly();
-                p.waitFor(2, TimeUnit.SECONDS);
-            }
+            if (p.waitFor(6, TimeUnit.SECONDS)) return;
+            if (pid > 0) android.os.Process.sendSignal(pid, 9);
+            if (!p.waitFor(2, TimeUnit.SECONDS)) p.destroyForcibly();
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /** The running bridge's pid (it writes it), or 0. */
+    private int bridgePid() {
+        try {
+            int pid = Integer.parseInt(Userland.read(new FileInputStream(userland.file(Userland.HOME + "/.ccapp/bridge.pid"))).trim());
+            String cmd = Userland.read(new FileInputStream("/proc/" + pid + "/cmdline"));
+            return cmd.contains("bridge.py") ? pid : 0;
+        } catch (IOException | NumberFormatException e) {
+            return 0;
         }
     }
 

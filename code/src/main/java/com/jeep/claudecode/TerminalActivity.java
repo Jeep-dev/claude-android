@@ -33,6 +33,10 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
     /** The running shell, kept across visits to this screen. */
     private static TerminalSession session;
     private static int textSizeDp = 12;
+    /** Text typed into the shell once it is up, such as `claude` for a login. */
+    static final String EXTRA_INPUT = "input";
+
+    private String input;
 
     private TerminalView view;
     private boolean ctrl, alt;
@@ -51,14 +55,14 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
         root.setBackgroundColor(Color.BLACK);
         view = new TerminalView(this, null);
         view.setTerminalViewClient(this);
-        view.setTypeface(Typeface.MONOSPACE);
-        view.setTextSize(Ui.dp(this, textSizeDp));
+        view.setTextSize(Ui.dp(this, textSizeDp)); // makes the renderer (monospace): before anything else on the view
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         root.addView(view, new LinearLayout.LayoutParams(-1, 0, 1));
         root.addView(keys(), new LinearLayout.LayoutParams(-1, Ui.dp(this, 40)));
         setContentView(root);
 
+        input = getIntent().getStringExtra(EXTRA_INPUT);
         if (session == null || !session.isRunning()) {
             try {
                 List<String> cmd = userland.command("/bin/bash", "-l");
@@ -71,6 +75,7 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
             }
         } else {
             session.updateTerminalSessionClient(this);
+            typeInput();
         }
         view.attachSession(session);
         view.requestFocus();
@@ -135,7 +140,17 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
 
     // ---- TerminalSessionClient ----
 
-    @Override public void onTextChanged(TerminalSession s) { view.onScreenUpdated(); }
+    @Override public void onTextChanged(TerminalSession s) {
+        view.onScreenUpdated();
+        typeInput(); // the shell is up
+    }
+
+    private void typeInput() {
+        if (input == null || session == null) return;
+        byte[] b = input.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        input = null;
+        session.write(b, 0, b.length);
+    }
     @Override public void onTitleChanged(TerminalSession s) {}
     @Override public void onSessionFinished(TerminalSession s) {
         if (session == s) session = null;
