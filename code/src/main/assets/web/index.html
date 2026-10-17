@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Claude Code</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="drawer" aria-label="对话列表">
+    <div class="drawer-head">
+      <span class="brand-mark" data-icon="mascot"></span>
+      <span class="brand-name">Claude Code</span>
+    </div>
+    <button id="newChat" class="new-chat"><span data-icon="plus"></span><span>新对话</span></button>
+    <label class="search"><span data-icon="search"></span><input id="search" type="search" placeholder="搜索对话" autocomplete="off"></label>
+    <div id="sessions" class="sessions"></div>
+    <div class="drawer-foot">
+      <button id="linkBtn" class="link"><span class="dot"></span><span id="linkText">正在连接…</span></button>
+      <button id="settingsBtn" class="icon-btn" aria-label="设置"><span data-icon="gear"></span></button>
+    </div>
+  </aside>
+  <div id="scrim"></div>
+
+  <main id="main">
+    <header class="top">
+      <button id="menuBtn" class="icon-btn" aria-label="对话列表"><span data-icon="sidebar"></span></button>
+      <button id="titleBtn" class="title">
+        <span id="title">新对话</span>
+        <span id="subtitle"></span>
+      </button>
+      <button id="newBtn" class="icon-btn" aria-label="新对话"><span data-icon="compose"></span></button>
+    </header>
+    <div id="banner" hidden></div>
+    <div id="scroller">
+      <div id="thread"></div>
+    </div>
+    <button id="toBottom" aria-label="回到底部"><span data-icon="arrowDown"></span></button>
+    <footer class="composer-wrap">
+      <div class="composer">
+        <div id="attachments"></div>
+        <textarea id="input" rows="1" placeholder="有什么可以帮你的？" enterkeyhint="enter"></textarea>
+        <div class="composer-row">
+          <button id="attachBtn" class="round-btn" aria-label="添加图片"><span data-icon="plus"></span></button>
+          <button id="folderBtn" class="chip"><span data-icon="folder"></span><span id="folderName">work</span></button>
+          <button id="modelBtn" class="chip"><span id="modelName">默认模型</span><span data-icon="chevronDown"></span></button>
+          <span class="grow"></span>
+          <button id="sendBtn" class="send" aria-label="发送" disabled><span data-icon="arrowUp"></span></button>
+        </div>
+      </div>
+      <input id="fileInput" type="file" accept="image/*" multiple hidden>
+    </footer>
+  </main>
+
+  <div id="sheetLayer"><div id="sheet" role="dialog"></div></div>
+  <div id="toast"></div>
+</div>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
