@@ -301,7 +301,8 @@ input, textarea { font: inherit; color: inherit; }
 .chev .ic { width: 16px; height: 16px; }
 .thinking-head .ic, .tool-icon .ic { width: 17px; height: 17px; }
 .thinking-body {
-  margin: 4px 0 2px 3px; padding: 2px 0 2px 16px; border-left: 2px solid var(--border);
+  max-height: min(38vh, 300px); overflow-y: auto; overscroll-behavior: contain;
+  margin: 4px 0 2px 3px; padding: 2px 6px 2px 16px; border-left: 2px solid var(--border);
   color: var(--text-2); font-size: 14.5px; line-height: 1.65; white-space: pre-wrap;
 }
 

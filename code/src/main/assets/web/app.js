@@ -199,6 +199,10 @@
       if (!node) return;
       node.dataset.block = i;
       el.appendChild(node);
+      // Thinking that is still coming in stays scrolled to its newest lines.
+      if (b.type === 'thinking' && b.open && b.streaming) {
+        requestAnimationFrame(() => { const body = node.querySelector('.thinking-body'); if (body) body.scrollTop = body.scrollHeight; });
+      }
     });
     if (live) el.appendChild(statusEl(chat));
     else if (m.done) {
