@@ -105,6 +105,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 Chat.Block prev = null;
                 boolean text = false;
                 for (Chat.Block b : m.blocks) {
+                    // The model may send a thinking block with nothing in it: once it ends, there is nothing to show.
+                    if (b.kind == Chat.Block.THINKING && !b.streaming && b.text.trim().isEmpty()) continue;
                     int type = b.kind == Chat.Block.TEXT ? TEXT : b.kind == Chat.Block.THINKING ? THINKING
                             : b.kind == Chat.Block.TOOL ? TOOL : b.kind == Chat.Block.ERROR ? ERROR : STOPPED;
                     int gap = prev == null ? (out.isEmpty() ? 6 : 20)
