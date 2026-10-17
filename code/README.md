@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.2.2)
+# Claude Code for Android (v0.2.3)
 
 A phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon.

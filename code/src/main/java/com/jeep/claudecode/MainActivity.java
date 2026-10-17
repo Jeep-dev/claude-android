@@ -92,6 +92,9 @@ public final class MainActivity extends Activity {
 
         web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#FAF9F5"));
+        // As in Via: no overscroll stretch for the WebView itself. Android 12+ stretches by drawing
+        // the view into an offscreen layer, where the page shows black while text is selected.
+        web.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         setContentView(web);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
