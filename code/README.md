@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.3.4)
+# Claude Code for Android (v0.3.5)
 
 A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -10,7 +10,10 @@ interface is plain Android views (Java), so scrolling and text selection are the
   background through Termux's `RUN_COMMAND` service, passing the script and a random
   per-install token. It listens on `127.0.0.1:8765` only and rejects requests without the
   token. A newly started bridge replaces one already running; the app also replaces a running
-  bridge of another version.
+  bridge of another version. Requests to the bridge never go through a proxy (a VPN app's
+  proxy could hold them); a health check times out after 3 s and a newly started bridge has
+  12 s to answer, after which the app shows the setup steps. Tapping the connection status
+  while connecting restarts the bridge.
 - Each conversation is a `claude -p --input-format stream-json --output-format stream-json`
   process in bypass-permissions mode, kept alive between turns (stopped after 15 idle minutes)
   and resumed from its saved session (`--resume`) when needed. Stop sends Claude Code's

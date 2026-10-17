@@ -850,11 +850,16 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
     }
 
+    private int connectAttempt;
+
+    /** Connects to the bridge; a restart is never refused, and only the latest attempt counts. */
     private void connect(boolean restart) {
-        if (connecting) return;
+        if (connecting && !restart) return;
         connecting = true;
+        int attempt = ++connectAttempt;
         updateLink();
         bridge.connect(restart, result -> {
+            if (attempt != connectAttempt) return;
             connecting = false;
             if ("ok".equals(result)) {
                 setup = null;

@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.Proxy;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -106,9 +107,10 @@ final class Bridge {
     private Object[] exchange(String method, String path, String body) {
         HttpURLConnection c = null;
         try {
-            c = (HttpURLConnection) new URL(BASE + path).openConnection();
+            // Never through a proxy (a VPN app's proxy would hold requests to this phone).
+            c = (HttpURLConnection) new URL(BASE + path).openConnection(Proxy.NO_PROXY);
             c.setConnectTimeout(3000);
-            c.setReadTimeout(30000);
+            c.setReadTimeout(path.startsWith("/health") ? 3000 : 30000);
             c.setRequestMethod(method);
             c.setRequestProperty("X-Token", token);
             // A fresh connection each time: a reused one the bridge has closed loses the answer.
@@ -168,9 +170,11 @@ final class Bridge {
         }
     }
 
+    /** Waits at most 12 s for the bridge just started. */
     private String waitUntilUp() {
-        for (int i = 0; i < 40; i++) {
-            try { Thread.sleep(250); } catch (InterruptedException e) { return "timeout"; }
+        long end = System.currentTimeMillis() + 12_000;
+        while (System.currentTimeMillis() < end) {
+            try { Thread.sleep(300); } catch (InterruptedException e) { return "timeout"; }
             if (isCurrent(exchange("GET", "/health", null))) return "ok";
         }
         return "timeout";
@@ -209,7 +213,7 @@ final class Bridge {
         while (reading) {
             HttpURLConnection c = null;
             try {
-                c = (HttpURLConnection) new URL(BASE + "/events?since=" + lastSeq).openConnection();
+                c = (HttpURLConnection) new URL(BASE + "/events?since=" + lastSeq).openConnection(Proxy.NO_PROXY);
                 c.setConnectTimeout(3000);
                 c.setReadTimeout(40000);
                 c.setRequestProperty("X-Token", token);
