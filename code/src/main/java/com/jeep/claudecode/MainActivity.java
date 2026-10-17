@@ -1624,13 +1624,20 @@ public final class MainActivity extends Activity implements Bridge.Events {
         Dialog sheet = sheet("设置", null);
         LinearLayout box = content(sheet);
         LinearLayout actions = Ui.row(this);
-        TextView restart = button("重启 Claude Code", false, v -> {
+        TextView terminal = button("终端", true, v -> {
+            sheet.dismiss();
+            if (!userland.ready()) { toast("运行环境还没准备好"); return; }
+            startActivity(new Intent(this, TerminalActivity.class));
+        });
+        actions.addView(terminal);
+        TextView restart = button("重启", false, v -> {
             sheet.dismiss();
             toast("正在重启…");
             linked = false;
             connect(true);
         });
         actions.addView(restart);
+        Ui.margins(restart, this, 8, 0, 0, 0);
         TextView logs = button("运行日志", false, v -> { sheet.dismiss(); logSheet(); });
         actions.addView(logs);
         Ui.margins(logs, this, 8, 0, 0, 0);

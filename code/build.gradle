@@ -9,8 +9,8 @@ android {
         // 28: Claude Code and the userland's programs run from this app's files, which Android
         // allows only to apps targeting 28 or lower (as Termux does).
         targetSdk 28
-        versionCode 28
-        versionName '0.4.0'
+        versionCode 29
+        versionName '0.4.1'
     }
     signingConfigs {
         release {
@@ -58,6 +58,8 @@ dependencies {
     implementation 'io.noties.markwon:linkify:4.6.2'
     // Unpacks the userland (assets/runtime/rootfs.tar.xz).
     implementation 'org.tukaani:xz:1.9'
+    // The terminal (Settings → 终端): Termux's emulator and view, Apache 2.0.
+    implementation 'com.github.termux.termux-app:terminal-view:v0.118.3'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.12.2'

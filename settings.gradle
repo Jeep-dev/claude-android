@@ -1,7 +1,15 @@
 pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories { google(); mavenCentral() }
+    repositories {
+        google()
+        mavenCentral()
+        // Termux's terminal emulator and view, for the Claude Code app's terminal.
+        maven {
+            url 'https://jitpack.io'
+            content { includeGroup 'com.github.termux.termux-app' }
+        }
+    }
 }
 rootProject.name = 'Claude'
 include ':app', ':code'

@@ -28,6 +28,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".TerminalActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:exported="false"
+            android:theme="@style/Terminal"
+            android:windowSoftInputMode="adjustResize|stateAlwaysVisible" />
         <service
             android:name=".BridgeService"
             android:exported="false" />

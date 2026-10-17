@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.4.0)
+# Claude Code for Android (v0.4.1)
 
 Claude Code on the phone in one app, no Termux needed. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -32,6 +32,11 @@ interface is plain Android views (Java), so scrolling and text selection are the
   and `~/work` that Termux put in `Download/ccapp`, moving Termux's home paths to `/root` so old
   conversations resume. The `rish` command in Settings whitelists the app and turns off
   Android's limit on child processes.
+- Settings → 终端 opens a terminal in the userland (`bash -l` as root in `/root`), built on
+  Termux's terminal emulator and view (Apache 2.0): for commands, `apk add`, and interactive
+  programs such as vim or `claude` itself (its `/login` for a Claude subscription). A row of
+  keys gives ESC, TAB, CTRL, ALT, arrows, common symbols and paste; pinch changes the text
+  size. The shell lives on while the app does (leaving the screen keeps it; `exit` ends it).
 - Each conversation is a `claude -p --input-format stream-json --output-format stream-json`
   process (bypass-permissions mode unless changed in Settings → 启动命令, which also sets text
   for `--append-system-prompt` and extra arguments, kept in `~/.ccapp/launch.json`, and edits

@@ -341,11 +341,13 @@ final class Userland {
 
     void env(ProcessBuilder pb) {
         pb.environment().clear();
-        pb.environment().put("PROOT_TMP_DIR", tmp.getPath());
-        pb.environment().put("PROOT_LOADER", new File(bin, "loader").getPath());
-        pb.environment().put("LD_LIBRARY_PATH", bin.getPath());
-        pb.environment().put("PATH", "/system/bin");
-        pb.environment().put("HOME", base.getPath());
+        for (String kv : env()) pb.environment().put(kv.substring(0, kv.indexOf('=')), kv.substring(kv.indexOf('=') + 1));
+    }
+
+    /** proot's own environment, as KEY=value. */
+    String[] env() {
+        return new String[]{"PROOT_TMP_DIR=" + tmp.getPath(), "PROOT_LOADER=" + new File(bin, "loader").getPath(),
+                "LD_LIBRARY_PATH=" + bin.getPath(), "PATH=/system/bin", "HOME=" + base.getPath()};
     }
 
     private static boolean readable(File f) {
