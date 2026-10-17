@@ -26,6 +26,7 @@ class Element extends Node {
     return out;
   }
   getClientRects() { return [1]; }
+  checkVisibility() { return !this.hidden; }
   getBoundingClientRect() {
     return this.rect || { top: 900, bottom: 940, left: 0, right: 400, width: 400,
       height: this.tagName === 'BODY' ? 1000 : 60 };
@@ -106,6 +107,45 @@ assert.equal(key({ keyCode: 229 }), false, 'IME Enter (keyCode 229)');
 send.disabled = true;
 assert.equal(key({}), true, 'Send disabled: no new line');
 assert.equal(send.clicks, 3, 'Send disabled: nothing sent');
+timers.length = 0;
+
+// Send disabled for a moment (long paste, file still taken in): sent once it is enabled.
+key({});
+timers.shift()(); assert.equal(send.clicks, 3, 'still disabled: waits');
+send.disabled = false;
+timers.shift()(); assert.equal(send.clicks, 4, 'Send enabled: sent');
+for (let i = 0; i < 10 && timers.length; i++) timers.shift()();
+assert.equal(timers.length, 0, '...and stops waiting');
+
+// Gives up after a few seconds.
+document.activeElement = editor;
+send.disabled = true;
+key({});
+now += 3500;
+timers.shift()();
+send.disabled = false;
+assert.equal(timers.length, 0, 'gives up after the wait');
+assert.equal(send.clicks, 4, '...without sending');
+
+// Empty box, Send disabled: Tab; a long paste that turns into an attachment is sent once
+// Send is enabled, but a suggestion filled in by Tab is not.
+editor.textContent = '';
+send.disabled = true;
+key({});
+send.disabled = false;
+timers.shift()(); assert.equal(send.clicks, 5, 'pasted attachment sent when Send enabled');
+flush();
+send.disabled = true;
+key({});
+editor.textContent = 'suggested prompt';
+send.disabled = false;
+timers.shift()(); assert.equal(send.clicks, 5, 'suggestion filled in by Tab is not sent');
+
+// Send hidden while Claude replies (Stop shows in its place): Enter is Claude's own.
+send.hidden = true;
+assert.equal(key({}), false, 'Send hidden: Enter left to Claude');
+assert.equal(send.clicks, 5, '...nothing clicked');
+send.hidden = false;
 send.attrs['aria-label'] = 'Stop response';
 assert.equal(key({}), false, 'no Send button (Claude replying): Enter is a new line');
 console.log('claude-page: all tests passed');

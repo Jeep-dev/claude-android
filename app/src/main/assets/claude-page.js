@@ -10,7 +10,9 @@
   //    Enter that confirms an input-method candidate only confirms it.
   // 3. In an empty message box with nothing to send (Send disabled), Enter presses Tab
   //    instead: Tab takes Claude's suggested prompt, which a phone keyboard has no key for.
-  //    With only an attachment, Send is enabled and Enter sends.
+  //    With only an attachment, Send is enabled and Enter sends. If Send becomes enabled
+  //    within a few seconds (a long paste, a file still being taken in), it is sent then.
+  //    With no Send on screen (Claude replying), Enter is left to Claude.
   // 4. After sending, the keyboard closes.
   const EDITABLE = 'textarea, input, [contenteditable]:not([contenteditable="false"])';
   const SEND = 'button[aria-label*="send" i], button[aria-label*="submit" i], button[type="submit"], '
@@ -66,31 +68,55 @@
     return focus.call(this, options);
   };
 
+  // Shown on screen: Claude keeps Send and Stop in one slot and hides the one not in use.
+  const shown = el => el.checkVisibility
+    ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    : el.getClientRects().length > 0;
+
+  // Send may be disabled for a moment after Enter (a long paste or a file still being taken
+  // in): wait for it, then send. A new Enter in the meantime cancels.
+  const WAIT_MS = 3000;
+  let waiting = 0;
+  function sendWhenReady(field, onlyIfEmpty) {
+    const started = Date.now();
+    const id = ++waiting;
+    (function poll() {
+      if (id !== waiting || Date.now() - started > WAIT_MS) return;
+      if (onlyIfEmpty && !empty(field)) return;
+      const send = sendButtons(field).find(b => !b.disabled && shown(b));
+      if (send) send.click();
+      else setTimeout(poll, 100);
+    })();
+  }
+
   document.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
     if (event.isComposing || event.keyCode === 229) return;
     const field = event.target;
     if (!editable(field) || field.tagName === 'INPUT') return;
-    const buttons = sendButtons(field);
-    const send = buttons.find(b => !b.disabled && b.getClientRects().length);
+    waiting++;
+    const buttons = sendButtons(field).filter(shown);
+    // No Send on screen (Claude is replying, Stop shows): Enter is Claude's own, which may
+    // queue the message.
+    if (!buttons.length) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const send = buttons.find(b => !b.disabled);
     // Something to send (text, or only an attachment): Enter sends it.
     if (send) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
       send.click();
       return;
     }
-    // Nothing typed and nothing to send: Enter presses Tab (takes the suggested prompt).
     if (empty(field)) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
+      // Nothing typed and Send disabled: Enter presses Tab (takes the suggested prompt). A long
+      // paste becomes an attachment, with Send enabled a moment later: then it is sent, unless
+      // Tab filled in the suggestion.
       pressTab(field);
+      sendWhenReady(field, true);
       return;
     }
-    if (!buttons.length) return; // No Send button here (e.g. Claude is replying): a new line.
-    // Text typed but Send disabled (e.g. an upload in progress): no new line either.
-    event.preventDefault();
-    event.stopImmediatePropagation();
+    // Text typed but Send disabled for now: send once it is enabled; never a new line.
+    sendWhenReady(field, false);
   }, true);
 
   // Sending by Enter or by tapping Send: close the keyboard once Claude has taken the text.

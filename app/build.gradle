@@ -8,8 +8,8 @@ android {
         applicationId 'com.jeep.claude'
         minSdk 26
         targetSdk 34
-        versionCode 41
-        versionName '4.1.0'
+        versionCode 43
+        versionName '4.1.2'
     }
     signingConfigs {
         release {

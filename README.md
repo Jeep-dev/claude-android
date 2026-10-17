@@ -1,4 +1,4 @@
-# Claude for Android (v4.1.0)
+# Claude for Android (v4.1.2)
 
 A plain Android WebView showing Claude (it opens the Claude page last left, at first
 https://claude.ai/code), written from scratch. One small page
@@ -30,7 +30,9 @@ darkening off).
   unless that field was just touched or a text field already has focus, so switching chats
   or tapping Send opens no keyboard. Enter sends (clicks the Send button next to the message
   box); Shift+Enter makes a new line; Enter confirming an input-method candidate only
-  confirms it; with no Send button (Claude replying) Enter is a new line. In an empty box with nothing to send
+  confirms it; with no Send button on screen (Claude replying, Stop shows) Enter is left to
+  Claude. If Send is disabled for a moment (a long paste, a file still being taken in), Enter
+  waits up to 3 seconds for it and then sends. In an empty box with nothing to send
   (Send disabled), Enter presses Tab instead, which takes Claude's grey
   suggested prompt (a phone keyboard has no Tab key); then Enter or Send sends it. With only an
   attachment Send is enabled, and Enter sends. After sending, the
