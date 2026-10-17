@@ -45,7 +45,6 @@ import android.widget.Toast;
 
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.SimpleItemAnimator;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -205,8 +204,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
         list.setClipToPadding(false);
         list.setPadding(dp(18), dp(6), dp(18), dp(24));
         list.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
-        ((SimpleItemAnimator) list.getItemAnimator()).setSupportsChangeAnimations(false);
-        adapter = new ThreadAdapter(this, md, this::copy, this::render);
+        list.setItemAnimator(null); // rows change in place; animated moves overlap neighbours
+        adapter = new ThreadAdapter(this, md, this::copy, () -> {
+            // A row opened or closed: the list stays where the reader is, growing downward.
+            stick = false;
+            renderNow();
+            list.post(() -> toBottom.setVisibility(list.canScrollVertically(1) ? View.VISIBLE : View.GONE));
+        });
         list.setAdapter(adapter);
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(RecyclerView rv, int dx, int dy) {
