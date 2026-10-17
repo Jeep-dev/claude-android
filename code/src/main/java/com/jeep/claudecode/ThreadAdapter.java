@@ -332,7 +332,10 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         JSONObject i = b.input;
         String name = b.name == null || b.name.isEmpty() ? "Tool" : b.name;
         switch (name) {
-            case "Bash": return new String[]{"terminal", name, i.optString("command").trim().split("\n")[0]};
+            case "Bash": {
+                String summary = i.optString("description");
+                return new String[]{"terminal", name, summary.isEmpty() ? i.optString("command").trim().split("\n")[0] : summary};
+            }
             case "Read": return new String[]{"file", name, Ui.base(i.optString("file_path"))};
             case "Write": return new String[]{"filePlus", name, Ui.base(i.optString("file_path"))};
             case "Edit": case "MultiEdit": return new String[]{"pencil", name, Ui.base(i.optString("file_path"))};
@@ -342,37 +345,33 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             case "WebFetch": return new String[]{"globe", name, i.optString("url")};
             case "WebSearch": return new String[]{"globe", name, i.optString("query")};
             case "Task": case "Agent": return new String[]{"spark", name, i.optString("description")};
-            case "TodoWrite": return new String[]{"list", "Update Todos", ""};
+            case "TodoWrite": return new String[]{"list", "Todo", "更新待办"};
             case "Skill": return new String[]{"spark", name, i.optString("skill", i.optString("command"))};
             default: return new String[]{"tool", name, ""};
         }
     }
 
-    private static int iconRes(String name) {
-        switch (name) {
-            case "terminal": return R.drawable.ic_terminal;
-            case "file": return R.drawable.ic_file;
-            case "filePlus": return R.drawable.ic_file_plus;
-            case "pencil": return R.drawable.ic_pencil;
-            case "search": return R.drawable.ic_search;
-            case "globe": return R.drawable.ic_globe;
-            case "spark": return R.drawable.ic_spark;
-            case "list": return R.drawable.ic_list;
-            default: return R.drawable.ic_tool;
-        }
-    }
-
     private void tool(LinearLayout box, Chat.Block b) {
         String[] info = toolInfo(b);
-        LinearLayout head = head(iconRes(info[0]), true);
-        TextView label = Ui.text(c, info[1], 14.5f, R.color.text);
-        label.setTypeface(Ui.MEDIUM);
-        label.setPadding(Ui.dp(c, 9), 0, Ui.dp(c, 7), 0);
-        head.addView(label);
-        TextView detail = Ui.text(c, info[2], 12.5f, R.color.text3);
-        detail.setTypeface(Ui.MONO);
+        // As in Claude Code's terminal: the tool's name in a box, then a summary of the step.
+        LinearLayout head = Ui.row(c);
+        head.setMinimumHeight(Ui.dp(c, 36));
+        head.setPadding(Ui.dp(c, 6), Ui.dp(c, 4), Ui.dp(c, 8), Ui.dp(c, 4));
+        head.setBackground(Ui.press(c, null, Ui.dp(c, 10)));
+        LinearLayout.LayoutParams lp = Ui.fill();
+        lp.leftMargin = -Ui.dp(c, 6);
+        head.setLayoutParams(lp);
+        TextView name = Ui.text(c, info[1], 12, b.error ? R.color.danger : R.color.text);
+        name.setTypeface(Typeface.create(Ui.MONO, Typeface.BOLD));
+        name.setGravity(Gravity.CENTER);
+        name.setPadding(Ui.dp(c, 7), Ui.dp(c, 4), Ui.dp(c, 7), Ui.dp(c, 4));
+        name.setBackground(Ui.round(Ui.color(c, R.color.surface), Ui.dp(c, 7), Ui.dp(c, 1),
+                Ui.color(c, b.error ? R.color.danger : R.color.border)));
+        head.addView(name);
+        TextView detail = Ui.text(c, info[2], 14, R.color.text2);
         detail.setSingleLine(true);
         detail.setEllipsize(TextUtils.TruncateAt.END);
+        detail.setPadding(Ui.dp(c, 9), 0, 0, 0);
         head.addView(detail, Ui.weight());
         View state;
         if (b.running) {
