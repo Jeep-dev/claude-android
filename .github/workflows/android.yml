@@ -14,7 +14,6 @@ jobs:
       - name: Check Claude Code app sources
         run: |
           python3 -c "import ast; ast.parse(open('code/src/main/assets/bridge.py').read())"
-          node --check code/src/main/assets/web/app.js
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

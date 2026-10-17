@@ -1,14 +1,16 @@
-# Claude Code for Android (v0.2.3)
+# Claude Code for Android (v0.3.0)
 
-A phone interface for Claude Code running in Termux. Separate from the claude.ai app in
-`app/`: its own application id (`com.jeep.claudecode`), name and icon.
+A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
+`app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
+interface is plain Android views (Java), so scrolling and text selection are the system's own.
 
 ## How it works
 
 - `assets/bridge.py` runs in Termux (standard-library Python). The app starts it in the
   background through Termux's `RUN_COMMAND` service, passing the script and a random
   per-install token. It listens on `127.0.0.1:8765` only and rejects requests without the
-  token. A newly started bridge replaces one already running.
+  token. A newly started bridge replaces one already running; the app also replaces a running
+  bridge of another version.
 - Each conversation is a `claude -p --input-format stream-json --output-format stream-json`
   process in bypass-permissions mode, kept alive between turns (stopped after 15 idle minutes)
   and resumed from its saved session (`--resume`) when needed. Stop sends Claude Code's
@@ -16,11 +18,10 @@ A phone interface for Claude Code running in Termux. Separate from the claude.ai
 - The conversation list and history come from Claude Code's own transcripts in
   `~/.claude/projects`. New conversations run in `~/work` by default; the folder can be
   changed per new conversation.
-- `assets/web` is the interface, served from assets on an https origin
-  (`WebViewAssetLoader`). The page calls `window.Native`; `MainActivity` does the HTTP
-  requests, reads the bridge's event stream and passes events to the page in batches.
-- Markdown is rendered with marked, sanitised with DOMPurify and highlighted with
-  highlight.js, bundled in `assets/web/vendor` (licences in `LICENSES.txt`).
+- `Bridge` talks to the bridge (HTTP, event stream); `Chat` turns Claude Code's stream-json
+  output (or a transcript) into messages and blocks; `ThreadAdapter` shows them in a
+  RecyclerView; `Md` renders Markdown with Markwon, fenced code as cards with a copy button;
+  `DrawerFrame` is the drawer that a horizontal swipe anywhere opens.
 
 ## Interface
 
@@ -28,9 +29,11 @@ Drawer with the conversation list (swipe right anywhere to open, left to close; 
 conversation to delete it), floating composer where Enter makes a new line and the button
 sends, files from the system picker (pictures go to the model scaled to 1568 px JPEG; other
 files are saved into the working folder, never overwriting, and their paths added to the
-message), working-folder and model pickers, thinking (opened, it scrolls inside a box of at most 300 px) and tool steps collapsed into rows (Bash,
-file edits with a diff, to-do lists), code blocks with copy, token usage per reply
-(↑ context, ↓ output, CH cache hits), light and dark colours.
+message), working-folder and model pickers, thinking (opened, it scrolls inside a box of at
+most 300 dp) and tool steps collapsed into rows named as in Claude Code's terminal
+(`Bash ls -la`, `Read count.py`; file edits with a diff, to-do lists), selectable text, code
+blocks with copy, token usage per reply (↑ context, ↓ output, CH cache hits), light and dark
+colours.
 
 While Claude Code works, the status line shows elapsed time, API retries (attempt and error)
 and how long nothing has arrived once that passes 20 s. A send whose answer is lost is
@@ -54,3 +57,8 @@ Claude Code's own `/effort`). Everything else, such as `/compact`, `/context`, `
 3. Grant the app "Run commands in Termux environment" when it asks.
 
 The app shows these steps itself when it cannot reach the bridge.
+
+## Screenshots without a phone
+
+`ScreensTest` renders the main screens with Robolectric's native graphics:
+`gradle :code:testDebugUnitTest --tests com.jeep.claudecode.ScreensTest -Dshots=<dir>`.
