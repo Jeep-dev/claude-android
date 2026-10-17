@@ -106,6 +106,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private ThreadAdapter adapter;
     private ScrollView emptyView;
     private ImageView toBottom, sendBtn;
+    private TextView modelLabel, contextLabel;
     private EditText input;
     private LinearLayout attachments, slashMenu, sessionsBox;
     private HorizontalScrollView attachScroll;
@@ -272,7 +273,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private View buildComposer() {
         LinearLayout wrap = Ui.column(this);
-        wrap.setPadding(dp(12), dp(4), dp(12), dp(10));
+        wrap.setPadding(dp(12), dp(4), dp(12), dp(2));
         LinearLayout card = Ui.column(this);
         card.setBackground(Ui.round(col(R.color.surface), dp(26), dp(1), col(R.color.border)));
         card.setElevation(dp(2));
@@ -347,6 +348,28 @@ public final class MainActivity extends Activity implements Bridge.Events {
         row.addView(sendBtn, sp);
         card.addView(row, Ui.fill());
         wrap.addView(card, Ui.fill());
+
+        // Under the box: the model and thinking level (tap to change), and the context in use.
+        LinearLayout foot = Ui.row(this);
+        foot.setPadding(dp(4), 0, dp(10), 0);
+        modelLabel = Ui.text(this, "", 12.5f, R.color.text2);
+        modelLabel.setSingleLine(true);
+        modelLabel.setEllipsize(TextUtils.TruncateAt.END);
+        modelLabel.setGravity(Gravity.CENTER_VERTICAL);
+        modelLabel.setPadding(dp(8), 0, dp(8), 0);
+        modelLabel.setCompoundDrawablePadding(dp(2));
+        android.graphics.drawable.Drawable chev = getDrawable(R.drawable.ic_chevron_down).mutate();
+        chev.setBounds(0, 0, dp(14), dp(14));
+        chev.setTint(col(R.color.text3));
+        modelLabel.setCompoundDrawables(null, null, chev, null);
+        modelLabel.setBackground(Ui.press(this, null, dp(10)));
+        modelLabel.setOnClickListener(v -> modelSheet());
+        foot.addView(modelLabel, new LinearLayout.LayoutParams(-2, dp(30)));
+        foot.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        contextLabel = Ui.text(this, "", 12.5f, R.color.text3);
+        contextLabel.setTypeface(Typeface.MONOSPACE);
+        foot.addView(contextLabel);
+        wrap.addView(foot, Ui.fill());
         return wrap;
     }
 
@@ -495,6 +518,53 @@ public final class MainActivity extends Activity implements Bridge.Events {
         sendBtn.setEnabled(stop || canSend);
         sendBtn.setPadding(dp(6), dp(6), dp(6), dp(6));
         renderAttachments();
+        updateFoot();
+    }
+
+    /** The model in use: the one picked here, else this chat's, else Claude Code's default. */
+    private String modelInUse() {
+        if (!model.isEmpty()) return model;
+        if (current.model != null && !current.model.isEmpty()) return current.model;
+        return defaultModel;
+    }
+
+    private void updateFoot() {
+        String m = modelInUse();
+        String name = m.isEmpty() ? "默认模型" : modelName(m);
+        modelLabel.setText(effort.isEmpty() ? name : name + " " + effort);
+        // The chat's reported window holds for its own model; one picked since has its own.
+        boolean same = model.isEmpty() || model.equals(current.model);
+        long window = same && current.window > 0 ? current.window : windowOf(m);
+        contextLabel.setText(window > 0 ? count(current.context) + "/" + count(window)
+                : current.context > 0 ? count(current.context) : "");
+    }
+
+    /** "claude-opus-5-5[1m]" → "opus 5.5"; another provider's name stays as it is. */
+    private static String modelName(String id) {
+        String n = shortModel(id);
+        if (!n.startsWith("claude-")) return n;
+        n = n.substring(7).replaceAll("-\\d{8}$", "");
+        n = n.replaceAll("-(\\d+)-(\\d+)$", " $1.$2").replaceAll("-(\\d+)$", " $1");
+        return n;
+    }
+
+    /** 250k, 1m: tokens in round numbers. */
+    private static String count(long n) {
+        if (n >= 1_000_000) {
+            String v = String.format(Locale.ROOT, "%.1f", n / 1e6);
+            return (v.endsWith(".0") ? v.substring(0, v.length() - 2) : v) + "m";
+        }
+        if (n >= 1000) return Math.round(n / 1000.0) + "k";
+        return String.valueOf(n);
+    }
+
+    /** A model's context window, as Claude Code last reported it; a [1m] model has a million. */
+    private long windowOf(String m) {
+        try {
+            long w = new JSONObject(prefs.getString("windows", "{}")).optLong(m);
+            if (w > 0) return w;
+        } catch (JSONException ignored) { /* none */ }
+        return m.toLowerCase(Locale.ROOT).endsWith("[1m]") ? 1_000_000 : 0;
     }
 
     private static String shortModel(String m) {
@@ -855,6 +925,15 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 }
             }
             if (chat.apply(data)) loadSessions();
+            if ("result".equals(data.optString("type")) && chat.window > 0) {
+                try {
+                    JSONObject w = new JSONObject(prefs.getString("windows", "{}"));
+                    String m = chat.model != null ? chat.model : modelInUse();
+                    w.put(m, chat.window);
+                    if (!model.isEmpty()) w.put(model, chat.window);
+                    prefs.edit().putString("windows", w.toString()).apply();
+                } catch (JSONException ignored) { /* not saved */ }
+            }
             if (chat.sessionId != null) bySession.put(chat.sessionId, chat.key);
         } else if ("state".equals(kind)) {
             if (data != null && data.optBoolean("running") && !chat.running) {
@@ -1605,7 +1684,37 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void modelSheet() {
-        Dialog sheet = sheet("模型", "对新消息生效；“默认”用 Claude Code 设置里的模型。");
+        Dialog sheet = sheet("模型与思考", "对新消息生效；“默认”用 Claude Code 设置里的。");
+        TextView th = Ui.text(this, "思考", 13, R.color.text3);
+        th.setPadding(dp(4), 0, 0, dp(8));
+        content(sheet).addView(th);
+        LinearLayout levels = Ui.row(this);
+        String[] keys = new String[EFFORTS.length + 1];
+        String[] names = new String[EFFORTS.length + 1];
+        keys[0] = ""; names[0] = "默认";
+        for (int i = 0; i < EFFORTS.length; i++) { keys[i + 1] = EFFORTS[i]; names[i + 1] = EFFORTS[i]; }
+        for (int i = 0; i < keys.length; i++) {
+            String k = keys[i];
+            boolean on = k.equals(effort);
+            TextView b = Ui.text(this, names[i], 12.5f, on ? R.color.bg : R.color.text);
+            b.setGravity(Gravity.CENTER);
+            b.setSingleLine(true);
+            b.setBackground(on ? Ui.round(col(R.color.text), dp(10))
+                    : Ui.round(col(R.color.surface), dp(10), dp(1), col(R.color.border)));
+            b.setOnClickListener(v -> {
+                effort = k;
+                prefs.edit().putString("effort", effort).apply();
+                sheet.dismiss();
+                updateChrome();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(36), 1);
+            if (i > 0) lp.leftMargin = dp(6);
+            levels.addView(b, lp);
+        }
+        content(sheet).addView(levels, Ui.fill());
+        TextView mt = Ui.text(this, "模型", 13, R.color.text3);
+        mt.setPadding(dp(4), dp(16), 0, dp(8));
+        content(sheet).addView(mt);
         LinearLayout card = card(sheet);
         // The models in Claude Code's settings, then the ones typed here before: whatever the provider.
         List<String> all = new ArrayList<>();

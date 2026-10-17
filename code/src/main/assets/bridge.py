@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 14  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 15  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -437,6 +437,7 @@ def load_history(session_id):
     if not path:
         return None
     messages, tools, cwd, custom, skipped = [], {}, None, None, 0
+    context, model = 0, None  # of the last reply: tokens it read, and its model
     with open(path, encoding='utf-8', errors='replace') as f:
         for line in f:
             try:
@@ -483,6 +484,12 @@ def load_history(session_id):
                     if text_parts or images:
                         messages.append({'role': 'user', 'text': '\n'.join(text_parts), 'images': images})
                 elif kind == 'assistant' and isinstance(content, list):
+                    usage = msg.get('usage') or {}
+                    if usage.get('input_tokens') is not None:
+                        context = sum(usage.get(k) or 0 for k in
+                                      ('input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'))
+                    if msg.get('model') and not str(msg['model']).startswith('<'):
+                        model = msg['model']
                     if not messages or messages[-1]['role'] != 'assistant':
                         messages.append({'role': 'assistant', 'blocks': []})
                     blocks = messages[-1]['blocks']
@@ -504,7 +511,8 @@ def load_history(session_id):
                     import traceback
                     log('history %s: skipped an entry\n%s' % (session_id, traceback.format_exc()))
                 skipped += 1
-    return {'id': session_id, 'cwd': cwd, 'title': custom, 'messages': messages}
+    return {'id': session_id, 'cwd': cwd, 'title': custom, 'messages': messages,
+            'context': context, 'model': model}
 
 
 claude_version = ''

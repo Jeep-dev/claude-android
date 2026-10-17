@@ -107,7 +107,7 @@ public class ScreensTest {
         chat.startedAt = System.currentTimeMillis() - 7000;
         String k = chat.key;
         List<JSONObject> evs = new ArrayList<>();
-        evs.add(ev(k, "cc", "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"deepseek-flash\",\"slash_commands\":[\"compact\",\"context\",\"cost\",\"init\",\"simplify\",\"debug\"]}"));
+        evs.add(ev(k, "cc", "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"claude-opus-5-5[1m]\",\"slash_commands\":[\"compact\",\"context\",\"cost\",\"init\",\"simplify\",\"debug\"]}"));
         evs.add(ev(k, "cc", se("{\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":1200,\"cache_read_input_tokens\":18000}}}")));
         evs.add(ev(k, "cc", se("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}")));
         evs.add(ev(k, "cc", se("{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"用户想看目录内容，然后写脚本。先 ls。\"}}")));
@@ -132,7 +132,7 @@ public class ScreensTest {
         chat.queue.clear();
 
         List<JSONObject> end = new ArrayList<>();
-        end.add(ev(k, "cc", "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"s1\",\"usage\":{\"output_tokens\":406}}"));
+        end.add(ev(k, "cc", "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"s1\",\"usage\":{\"output_tokens\":406},\"modelUsage\":{\"claude-opus-5-5[1m]\":{\"inputTokens\":2100,\"cacheReadInputTokens\":37800,\"contextWindow\":1000000}}}"));
         a.events(end);
         idle();
         shot(root, "04-done");
@@ -196,6 +196,12 @@ public class ScreensTest {
         Dialog d = ShadowDialog.getLatestDialog();
         View sheet = d.getWindow().getDecorView();
         shot(sheet, "09-settings");
+        d.dismiss();
+
+        set(a, "effort", "max");
+        call(a, "modelSheet");
+        idle();
+        shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "11-model");
     }
 
     static final class RecyclerScroll {

@@ -65,6 +65,8 @@ final class Chat {
     long startedAt, lastEvent;
     String verb = VERBS[0], detail = "";
     JSONObject lastUsage;
+    /** Tokens in the context at the last request, and the model's context window when known. */
+    long context, window;
     String draft = "";
     final List<Attachment> attachments = new ArrayList<>();
 
@@ -174,7 +176,10 @@ final class Chat {
                 JSONObject msg = e.optJSONObject("message");
                 if (msg != null) {
                     m.streamed.add(msg.optString("id"));
-                    if (msg.optJSONObject("usage") != null) lastUsage = msg.optJSONObject("usage");
+                    if (msg.optJSONObject("usage") != null) {
+                        lastUsage = msg.optJSONObject("usage");
+                        context = contextOf(lastUsage);
+                    }
                 }
             } else if ("content_block_start".equals(et)) {
                 JSONObject cb = e.optJSONObject("content_block");
@@ -308,11 +313,24 @@ final class Chat {
             JSONObject u = d.optJSONObject("usage");
             JSONObject last = lastUsage != null ? lastUsage : u;
             if (last != null) {
-                m.context = last.optLong("input_tokens") + last.optLong("cache_read_input_tokens")
-                        + last.optLong("cache_creation_input_tokens");
+                m.context = contextOf(last);
+                if (m.context > 0) context = m.context;
                 m.cached = last.optLong("cache_read_input_tokens");
             }
             if (u != null) m.output = u.optLong("output_tokens");
+            JSONObject mu = d.optJSONObject("modelUsage");
+            if (mu != null) {
+                // The window of this chat's model, or else of the one that read the most.
+                long most = -1;
+                for (java.util.Iterator<String> it = mu.keys(); it.hasNext(); ) {
+                    String k = it.next();
+                    JSONObject o = mu.optJSONObject(k);
+                    if (o == null || o.optLong("contextWindow") <= 0) continue;
+                    long read = o.optLong("inputTokens") + o.optLong("cacheReadInputTokens");
+                    if (k.equals(model)) { window = o.optLong("contextWindow"); break; }
+                    if (read > most) { most = read; window = o.optLong("contextWindow"); }
+                }
+            }
             m.done = true;
             m.touch();
             running = false;
@@ -325,8 +343,15 @@ final class Chat {
     }
 
     /** Messages from the bridge's /history (Claude Code's transcript). */
+    static long contextOf(JSONObject usage) {
+        return usage.optLong("input_tokens") + usage.optLong("cache_read_input_tokens")
+                + usage.optLong("cache_creation_input_tokens");
+    }
+
     void load(JSONObject history) {
         messages.clear();
+        if (history.optLong("context") > 0) context = history.optLong("context");
+        if (!history.optString("model").isEmpty() && model == null) model = history.optString("model");
         JSONArray list = history.optJSONArray("messages");
         for (int i = 0; list != null && i < list.length(); i++) {
             JSONObject h = list.optJSONObject(i);
