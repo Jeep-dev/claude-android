@@ -1,10 +1,7 @@
 package com.jeep.claudecode;
 
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -28,19 +25,16 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * The Claude Code bridge in Termux (assets/bridge.py): started through Termux's RUN_COMMAND
- * service with a per-install token, reached on 127.0.0.1. Results and events arrive on the
+ * The Claude Code bridge (assets/bridge.py), run by {@link BridgeService} inside this app's
+ * userland with a per-install token and reached on 127.0.0.1. Results and events arrive on the
  * main thread.
  */
 final class Bridge {
-    static final String TERMUX = "com.termux";
-    static final String RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND";
-    private static final String PYTHON = "/data/data/com.termux/files/usr/bin/python3";
-    private static final String TERMUX_HOME = "/data/data/com.termux/files/home";
-    private static final int PORT = 8765;
+    /** Not Termux's 8765: a bridge left running there must not answer for this one. */
+    static final int PORT = 8766;
     private static final String BASE = "http://127.0.0.1:" + PORT;
     /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
-    private static final int VERSION = 11;
+    private static final int VERSION = 12;
 
     interface Reply { void done(int status, JSONObject data); }
     interface Events { void events(List<JSONObject> batch); void link(boolean up); }
@@ -55,7 +49,7 @@ final class Bridge {
     private volatile long lastSeq = -1;
     private final List<JSONObject> pending = new ArrayList<>();
     private boolean flushQueued;
-    /** When this app last asked Termux to start the bridge: a start still under way is not repeated. */
+    /** When this app last asked for the bridge to start: a start still under way is not repeated. */
     private volatile long startedAt;
     /** When the bridge last sent anything (it pings every 5 s); 0 before the first. */
     static volatile long lastAlive;
@@ -63,6 +57,11 @@ final class Bridge {
     Bridge(Context context, Events listener) {
         this.context = context.getApplicationContext();
         this.listener = listener;
+        token = token(context);
+    }
+
+    /** This install's token, made on first use. */
+    static synchronized String token(Context context) {
         SharedPreferences prefs = context.getSharedPreferences("bridge", Context.MODE_PRIVATE);
         String saved = prefs.getString("token", null);
         if (saved == null) {
@@ -71,22 +70,9 @@ final class Bridge {
             StringBuilder hex = new StringBuilder();
             for (byte b : bytes) hex.append(String.format("%02x", b));
             saved = hex.toString();
-            prefs.edit().putString("token", saved).apply();
+            prefs.edit().putString("token", saved).commit();
         }
-        token = saved;
-    }
-
-    boolean hasTermux() {
-        try {
-            context.getPackageManager().getPackageInfo(TERMUX, 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException e) {
-            return false;
-        }
-    }
-
-    boolean hasPermission() {
-        return context.checkSelfPermission(RUN_COMMAND_PERMISSION) == PackageManager.PERMISSION_GRANTED;
+        return saved;
     }
 
     void get(String path, Reply reply) { request("GET", path, null, reply); }
@@ -147,19 +133,20 @@ final class Bridge {
     }
 
     /**
-     * Makes sure a bridge with this app's token and version answers, starting one in Termux if
-     * needed. Result: "ok", "termux", "permission", "start" or "timeout".
+     * Makes sure a bridge with this app's token and version answers, starting one if needed.
+     * Result: "ok", "install" (the userland is not unpacked yet) or "timeout".
      */
     void connect(boolean restart, java.util.function.Consumer<String> done) {
         pool.execute(() -> {
             String result;
             String why = restart ? "restart asked in the app" : isUp();
             if (why == null) result = "ok";
-            else if (!hasTermux()) result = "termux";
-            else if (!hasPermission()) result = "permission";
-            else if (System.currentTimeMillis() - startedAt < 15_000) result = waitUntilUp();
-            else if (!run(why)) result = "start";
-            else result = waitUntilUp();
+            else if (!new Userland(context).ready()) result = "install";
+            else if (System.currentTimeMillis() - startedAt < 30_000 && !restart) result = waitUntilUp();
+            else {
+                run(why);
+                result = waitUntilUp();
+            }
             if ("ok".equals(result) && !reading) {
                 reading = true;
                 pool.execute(this::readEvents);
@@ -196,9 +183,9 @@ final class Bridge {
                 : status == -1 ? "no bridge was running" : "the running bridge answered " + status;
     }
 
-    /** Waits at most 12 s for the bridge just started. */
+    /** Waits at most 30 s for the bridge just started (proot and Python take a while on a phone). */
     private String waitUntilUp() {
-        long end = System.currentTimeMillis() + 12_000;
+        long end = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < end) {
             try { Thread.sleep(300); } catch (InterruptedException e) { return "timeout"; }
             if (isCurrent(exchange("GET", "/health", null))) return "ok";
@@ -206,32 +193,11 @@ final class Bridge {
         return "timeout";
     }
 
-    /** Starts the bridge in Termux in the background; it replaces one already running. */
-    private boolean run(String why) {
-        String script;
-        try {
-            script = read(context.getAssets().open("bridge.py"));
-        } catch (IOException e) {
-            return false;
-        }
+    /** Has the service start the bridge; it replaces one already running. */
+    private void run(String why) {
         lastSeq = -1;
         startedAt = System.currentTimeMillis();
-        Intent intent = new Intent()
-                .setClassName(TERMUX, "com.termux.app.RunCommandService")
-                .setAction("com.termux.RUN_COMMAND")
-                .putExtra("com.termux.RUN_COMMAND_PATH", PYTHON)
-                .putExtra("com.termux.RUN_COMMAND_ARGUMENTS",
-                        new String[]{"-c", script, "--token", token, "--port", String.valueOf(PORT), "--reason", "app: " + why})
-                .putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
-                .putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-                .putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", "Claude Code bridge");
-        try {
-            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
-            else context.startService(intent);
-            return true;
-        } catch (RuntimeException e) {
-            return false;
-        }
+        ui.post(() -> BridgeService.start(context, why));
     }
 
     /** Reads the event stream, reconnecting, and hands events over in batches. */

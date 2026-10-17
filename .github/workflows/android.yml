@@ -14,6 +14,25 @@ jobs:
       - name: Check Claude Code app sources
         run: |
           python3 -c "import ast; ast.parse(open('code/src/main/assets/bridge.py').read())"
+      - name: Userland id for the Claude Code app
+        run: echo "RUNTIME_ID=$(cat code/runtime/*.sh | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: userland
+        with:
+          path: userland
+          key: userland-${{ env.RUNTIME_ID }}
+      - name: Build the userland (Alpine, Claude Code, proot)
+        if: steps.userland.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p userland
+          sudo code/runtime/build-rootfs.sh aarch64 userland/rootfs.tar.xz
+          code/runtime/fetch-proot.sh userland
+      - name: Put the userland in the app
+        run: |
+          mkdir -p code/src/main/assets/runtime
+          cp userland/* code/src/main/assets/runtime/
+          echo "$RUNTIME_ID" > code/src/main/assets/runtime/id
+          ls -l code/src/main/assets/runtime
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

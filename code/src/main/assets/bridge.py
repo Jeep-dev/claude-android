@@ -1,7 +1,7 @@
 """Claude Code bridge for the Claude Code app.
 
-Runs in Termux (started by the app through Termux's RUN_COMMAND service) and lets the app
-talk to Claude Code: each conversation is a `claude -p` process in stream-json mode, kept
+Runs inside the app's own Linux userland (Alpine under proot, started by the app's foreground
+service) and lets the app talk to Claude Code: each conversation is a `claude -p` process in stream-json mode, kept
 alive between turns and resumed from its saved session when needed. Listens on 127.0.0.1
 only, and every request must carry the token the app started it with.
 
@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 11  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 12  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -295,26 +295,6 @@ def chat_for(key, session_id=None):
         return chats[key]
 
 
-_awake = False
-
-
-def wake(on):
-    """Termux's wake lock, taken when the bridge starts and never released (a replaced bridge
-    releasing it could undo its successor's). Termux asks once to be left out of battery
-    optimization when it is first taken."""
-    global _awake
-    if on == _awake:
-        return
-    command = shutil.which('termux-wake-lock' if on else 'termux-wake-unlock')
-    if command:
-        try:
-            subprocess.Popen([command], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            _awake = on
-        except OSError:
-            pass
-
-
 def reaper():
     """Stops idle conversations, and logs a running turn with no output for a minute and the
     bridge itself having been paused (frozen by the system: it did not run for a while)."""
@@ -516,19 +496,26 @@ def load_history(session_id):
 
 
 def read_config():
-    models, env = [], {}
+    models, settings = [], {}
     try:
         with open(os.path.join(CLAUDE_DIR, 'settings.json'), encoding='utf-8') as f:
-            env = json.load(f).get('env') or {}
+            settings = json.load(f)
     except (OSError, ValueError):
         pass
+    if not isinstance(settings, dict):
+        settings = {}
+    env = settings.get('env') if isinstance(settings.get('env'), dict) else {}
+    # Something to sign in with: a key or token in settings or the environment, a key helper, or a login.
+    keys = ('ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN')
+    auth = (any(env.get(k) or os.environ.get(k) for k in keys) or bool(settings.get('apiKeyHelper'))
+            or os.path.exists(os.path.join(CLAUDE_DIR, '.credentials.json')))
     for key in ('ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL',
                 'ANTHROPIC_DEFAULT_HAIKU_MODEL'):
         value = env.get(key)
         if value and value not in models:
             models.append(value)
     base = env.get('ANTHROPIC_BASE_URL', '')
-    return {'models': models, 'defaultModel': env.get('ANTHROPIC_MODEL'), 'baseUrl': base}
+    return {'models': models, 'defaultModel': env.get('ANTHROPIC_MODEL'), 'baseUrl': base, 'auth': auth}
 
 
 def list_dirs(path):
@@ -805,13 +792,12 @@ def log(text):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', required=True)
-    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--port', type=int, default=8766)
     parser.add_argument('--reason', default='')
     args = parser.parse_args()
     replace_running_bridge()
     log('start pid %d version %d (%s)' % (os.getpid(), VERSION, args.reason or 'started by hand'))
     os.makedirs(DEFAULT_CWD, exist_ok=True)
-    wake(True)
 
     def shutdown(signum, _frame):
         signal.signal(signal.SIGTERM, signal.SIG_IGN)

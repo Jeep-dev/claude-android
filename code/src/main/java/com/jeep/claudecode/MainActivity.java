@@ -62,14 +62,16 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** Claude Code front end: native interface for Claude Code running in Termux behind the bridge. */
+/** Claude Code front end: native interface for Claude Code running in this app's own userland behind the bridge. */
 public final class MainActivity extends Activity implements Bridge.Events {
     private static final int PICK_FILES = 1;
-    private static final int ASK_PERMISSION = 2;
+    private static final int ASK_STORAGE = 2;
+    private static final String STORAGE = android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
     private static final String[] EFFORTS = {"low", "medium", "high", "xhigh", "max"};
     private static final String[] EFFORT_NAMES = {"低", "中", "高", "超高", "最高"};
 
     private Bridge bridge;
+    private Userland userland;
     private SharedPreferences prefs;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newSingleThreadExecutor();
@@ -79,7 +81,12 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private boolean linked, everLinked, connecting, resumed;
     /** When the bridge in use started; another value means a new bridge and lost turns. */
     private double bridgeStarted;
-    private String setup; // why the bridge cannot be reached, or null
+    private String setup; // why the bridge cannot be reached ("install" while the userland unpacks), or null
+    private boolean installing;
+    private int installPercent;
+    private String installError = "";
+    /** Claude Code has an API key or login to use; assumed until the bridge says otherwise. */
+    private boolean authSet = true;
     private String home = "", defaultCwd = "", cwd, model, effort, defaultModel = "";
     private final List<String> models = new ArrayList<>();
     private final List<String> commands = new ArrayList<>();
@@ -119,6 +126,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             // none saved
         }
         bridge = new Bridge(this, this);
+        userland = new Userland(this);
         md = new Md(this, this::copy, this::openUrl);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         build();
@@ -147,7 +155,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         resumed = false;
     }
 
-    /** The link stayed down: start the bridge again if it is gone (only in the foreground, where Termux can be started). */
+    /** The link stayed down: start the bridge again if it is gone (the service also restarts one that died). */
     private final Runnable recover = () -> {
         if (!linked && !connecting && resumed) connect(false);
     };
@@ -192,7 +200,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         top.addView(compose, new LinearLayout.LayoutParams(dp(42), dp(42)));
         main.addView(top, new LinearLayout.LayoutParams(-1, dp(46)));
 
-        banner = Ui.text(this, "与 Termux 的连接断开了，正在重连…", 13.5f, R.color.danger);
+        banner = Ui.text(this, "与 Claude Code 的连接断开了，正在重连…", 13.5f, R.color.danger);
         banner.setPadding(dp(12), dp(9), dp(12), dp(9));
         banner.setBackground(Ui.round(col(R.color.dangerSoft), dp(10)));
         banner.setVisibility(View.GONE);
@@ -332,7 +340,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         folderChip = chip(R.drawable.ic_folder, true);
         folderName = (TextView) folderChip.getChildAt(1);
         folderChip.setOnClickListener(v -> {
-            if (!linked) { toast("还没连上 Termux"); return; }
+            if (!linked) { toast("Claude Code 还没启动好"); return; }
             if (current.sessionId != null) { toast("已有对话的文件夹不能更改，新对话可以选"); return; }
             folderSheet(null);
         });
@@ -565,11 +573,25 @@ public final class MainActivity extends Activity implements Bridge.Events {
             sub.setSpan(new StyleSpan(Typeface.BOLD), s, sub.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             sub.append(" 里，想做点什么？");
         } else {
-            sub.append("正在连接 Termux 里的 Claude Code…");
+            sub.append("正在启动 Claude Code…");
         }
         TextView p = Ui.text(this, sub, 15, R.color.text2);
         p.setGravity(Gravity.CENTER);
         box.addView(p, Ui.fill());
+        if (linked && !authSet) {
+            TextView none = Ui.text(this, "还没有配置模型服务：填上 API 地址和 Key，或从 Termux 导入原来的配置。", 14, R.color.danger);
+            none.setGravity(Gravity.CENTER);
+            none.setPadding(0, dp(18), 0, dp(10));
+            box.addView(none, Ui.fill());
+            LinearLayout row = Ui.row(this);
+            row.setGravity(Gravity.CENTER);
+            row.addView(button("填写 API", true, v -> apiSheet()));
+            TextView imp = button("从 Termux 导入", false, v -> importSheet());
+            row.addView(imp);
+            Ui.margins(imp, this, 8, 0, 0, 0);
+            box.addView(row, Ui.fill());
+            return;
+        }
         LinearLayout chips = Ui.column(this);
         chips.setGravity(Gravity.CENTER_HORIZONTAL);
         chips.setPadding(0, dp(24), 0, 0);
@@ -589,33 +611,67 @@ public final class MainActivity extends Activity implements Bridge.Events {
         ImageView mark = new ImageView(this);
         mark.setImageResource(R.drawable.mascot);
         box.addView(mark, new LinearLayout.LayoutParams(dp(54), dp(33)));
-        TextView h = Ui.text(this, "连接 Termux", 26, R.color.text);
+        boolean busy = "install".equals(setup);
+        TextView h = Ui.text(this, busy ? "正在准备运行环境" : "Claude Code 没能启动", 26, R.color.text);
         h.setTypeface(Ui.SERIF);
         h.setPadding(0, dp(16), 0, dp(8));
         box.addView(h);
         String why;
-        switch (setup) {
-            case "termux": why = "没有找到 Termux。"; break;
-            case "permission": why = "还没有授权在 Termux 中运行命令。"; break;
-            case "timeout": why = "Termux 没有响应：可能还没允许其他 App 调用，或者没装 Python。"; break;
-            default: why = "无法启动 Termux 的命令服务。";
-        }
-        TextView p = Ui.text(this, "Claude Code 在 Termux 里运行，这个 App 是它的界面。" + why, 15, R.color.text2);
+        if (busy) why = "第一次打开或更新后，要把 Claude Code 和它的 Linux 环境解压到手机上，大约半分钟到一分钟。\n\n" + installPercent + "%";
+        else if ("installFailed".equals(setup)) why = "解压运行环境失败：" + installError;
+        else why = "后台 30 秒内没有起来。可以重试，或者在设置里看运行日志。";
+        TextView p = Ui.text(this, why, 15, R.color.text2);
         p.setLineSpacing(0, 1.25f);
         p.setPadding(0, 0, 0, dp(12));
         box.addView(p);
-        boolean termux = bridge.hasTermux(), perm = bridge.hasPermission();
-        String prop = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties && termux-reload-settings";
-        step(box, 1, termux, "安装 Termux 和 Claude Code", "需要 F-Droid 或 GitHub 版的 Termux，并已装好 Claude Code（能运行 claude）和 Python：", "pkg install -y python", null);
-        step(box, 2, termux && !"timeout".equals(setup) && !"start".equals(setup), "允许其他 App 调用 Termux", "在 Termux 里运行一次：", prop,
-                button("打开 Termux", false, v -> openTermux()));
-        step(box, 3, perm, "授权本 App 在 Termux 中运行命令", "用来在后台启动 Claude Code 的桥接程序。", null,
-                perm ? null : button("授权", true, v -> requestPermissions(new String[]{Bridge.RUN_COMMAND_PERMISSION}, ASK_PERMISSION)));
-        TextView retry = button("重新连接", true, v -> connect(true));
+        if (busy) return;
+        LinearLayout actions = Ui.row(this);
+        TextView retry = button("重试", true, v -> connect(true));
         retry.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
         retry.setTextColor(col(R.color.bg));
-        box.addView(retry);
-        Ui.margins(retry, this, 0, 18, 0, 0);
+        actions.addView(retry);
+        TextView logs = button("运行日志", false, v -> logSheet());
+        actions.addView(logs);
+        Ui.margins(logs, this, 8, 0, 0, 0);
+        box.addView(actions);
+        Ui.margins(actions, this, 0, 18, 0, 0);
+    }
+
+    /** Unpacks the userland (first launch, or an update that brings a new one), then connects. */
+    private void install() {
+        if (installing) return;
+        installing = true;
+        setup = "install";
+        installPercent = 0;
+        linked = false;
+        renderNow();
+        work.execute(() -> {
+            String error = null;
+            try {
+                userland.install(p -> ui.post(() -> {
+                    installPercent = p;
+                    if ("install".equals(setup) && emptyView.getVisibility() == View.VISIBLE) fillEmpty();
+                }));
+            } catch (Exception e) {
+                error = e.getMessage() != null ? e.getMessage() : e.toString();
+            }
+            String err = error;
+            ui.post(() -> {
+                installing = false;
+                if (err != null) {
+                    setup = "installFailed";
+                    installError = err;
+                    renderNow();
+                    return;
+                }
+                setup = null;
+                connect(false);
+                if (!prefs.getBoolean("askedStorage", false)) {
+                    prefs.edit().putBoolean("askedStorage", true).apply();
+                    requestStorage();
+                }
+            });
+        });
     }
 
     private TextView button(String label, boolean accent, View.OnClickListener click) {
@@ -629,54 +685,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         b.setOnClickListener(click);
         b.setLayoutParams(Ui.wrap());
         return b;
-    }
-
-    private void step(LinearLayout box, int n, boolean done, String titleText, String text, String cmd, View action) {
-        if (n > 1) {
-            View line = new View(this);
-            line.setBackgroundColor(col(R.color.border));
-            box.addView(line, new LinearLayout.LayoutParams(-1, dp(1)));
-        }
-        LinearLayout row = Ui.row(this);
-        row.setGravity(Gravity.TOP);
-        row.setPadding(0, dp(14), 0, dp(14));
-        TextView no = Ui.text(this, done ? "✓" : String.valueOf(n), 13, done ? R.color.ok : R.color.accentPress);
-        no.setGravity(Gravity.CENTER);
-        no.setTypeface(Typeface.DEFAULT_BOLD);
-        no.setBackground(Ui.round(done ? 0x1F2F8A5B : col(R.color.accentSoft), dp(13)));
-        row.addView(no, new LinearLayout.LayoutParams(dp(26), dp(26)));
-        LinearLayout body = Ui.column(this);
-        body.setPadding(dp(12), dp(2), 0, 0);
-        TextView t = Ui.text(this, titleText, 15, R.color.text);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        body.addView(t);
-        TextView s = Ui.text(this, text, 14, R.color.text2);
-        s.setPadding(0, dp(4), 0, 0);
-        s.setLineSpacing(0, 1.2f);
-        body.addView(s);
-        if (cmd != null) {
-            LinearLayout box2 = Ui.row(this);
-            box2.setBackground(Ui.round(col(R.color.codeBg), dp(10), dp(1), col(R.color.border)));
-            TextView code = Ui.text(this, cmd, 12.5f, R.color.text);
-            code.setTypeface(Ui.MONO);
-            code.setPadding(dp(11), dp(9), dp(11), dp(9));
-            code.setLineSpacing(0, 1.2f);
-            code.setTextIsSelectable(true);
-            box2.addView(code, Ui.weight());
-            TextView cp = Ui.text(this, "复制", 13, R.color.text2);
-            cp.setPadding(dp(12), dp(9), dp(12), dp(9));
-            cp.setBackground(Ui.press(this, null, dp(10)));
-            cp.setOnClickListener(v -> copy(cmd));
-            box2.addView(cp);
-            body.addView(box2, Ui.fill());
-            Ui.margins(box2, this, 0, 8, 0, 0);
-        }
-        if (action != null) {
-            body.addView(action);
-            Ui.margins(action, this, 0, 10, 0, 0);
-        }
-        row.addView(body, Ui.weight());
-        box.addView(row, Ui.fill());
     }
 
     // ================= sessions =================
@@ -875,7 +883,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 b.title = "Claude Code 意外退出";
                 int code = data.optInt("code");
                 // Popen gives a negative code for a signal; 9 is the system killing it.
-                String how = code == -9 ? "被系统强制结束（SIGKILL），多半是 Termux 在后台被杀"
+                String how = code == -9 ? "被系统强制结束（SIGKILL）"
                         : code < 0 ? "被信号 " + (-code) + " 结束" : "退出码 " + code;
                 StringBuilder err = new StringBuilder();
                 for (String line : data.optString("stderr").split("\n")) {
@@ -918,6 +926,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
             if ("ok".equals(result)) {
                 setup = null;
                 afterLink();
+            } else if ("install".equals(result)) {
+                install();
             } else {
                 setup = result;
                 linked = false;
@@ -936,7 +946,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             if (bridgeStarted != 0 && started != bridgeStarted) {
                 // A new bridge: the old one's turns ended with it.
                 for (Chat ch : chats.values()) {
-                    if (ch.running) fail(ch, "Termux 里的桥接重启了", "这一轮被中断，发消息即可接着这个对话继续。");
+                    if (ch.running) fail(ch, "后台重启了", "这一轮被中断，发消息即可接着这个对话继续。");
                 }
             }
             bridgeStarted = started;
@@ -951,7 +961,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
             JSONArray m = data.optJSONArray("models");
             for (int i = 0; m != null && i < m.length(); i++) models.add(m.optString(i));
             defaultModel = data.optString("defaultModel");
+            authSet = data.optBoolean("auth", true);
             updateChrome();
+            if (current.messages.isEmpty()) renderNow();
         });
         renderNow();
         loadSessions();
@@ -962,9 +974,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private void updateLink() {
         if (linkDot == null) return;
-        // Connected only while the bridge keeps pinging: a frozen Termux keeps the connection open.
+        // Connected only while the bridge keeps pinging: a frozen one keeps the connection open.
         boolean silent = linked && Bridge.lastAlive > 0 && System.currentTimeMillis() - Bridge.lastAlive > 8000;
-        String label = silent ? "Termux 没有响应" : linked ? "已连接 Termux" : connecting ? "正在连接…" : "未连接 · 点此重试";
+        String label = silent ? "后台没有响应" : linked ? "Claude Code 运行中" : installing ? "正在准备…"
+                : connecting ? "正在启动…" : "未运行 · 点此重试";
         int bannerShown = !linked && !connecting && setup == null && everLinked ? View.VISIBLE : View.GONE;
         if (banner.getVisibility() != bannerShown) banner.setVisibility(bannerShown);
         if (label.equals(shownLink)) return;
@@ -974,10 +987,22 @@ public final class MainActivity extends Activity implements Bridge.Events {
         linkText.setText(label);
     }
 
+    private boolean hasStorage() { return checkSelfPermission(STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED; }
+
+    private void requestStorage() {
+        requestPermissions(new String[]{STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE}, ASK_STORAGE);
+    }
+
+    private Runnable afterStorage;
+
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
-        if (request != ASK_PERMISSION) return;
-        if (bridge.hasPermission()) connect(true);
-        else { toast("没有授权，无法启动 Claude Code"); renderNow(); }
+        if (request != ASK_STORAGE) return;
+        Runnable next = afterStorage;
+        afterStorage = null;
+        if (!hasStorage()) { toast("没有存储权限：Claude Code 看不到手机里的文件"); return; }
+        // /sdcard is shared into the userland when the bridge starts.
+        if (!installing) connect(true);
+        if (next != null) next.run();
     }
 
     // ================= sending =================
@@ -994,7 +1019,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             return;
         }
         if (!linked) {
-            toast("正在重连 Termux，稍后再发");
+            toast(installing ? "运行环境还在准备，稍后再发" : "Claude Code 正在启动，稍后再发");
             if (!connecting) connect(false);
             return;
         }
@@ -1070,7 +1095,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 return;
             }
             if (chat.lastEvent > sentAt) return; // it is running after all
-            fail(chat, "发送失败", status == -2 ? "Termux 里的桥接程序没有回应。" : status == -1 ? "连不上 Termux 里的桥接程序。" : data.optString("error", String.valueOf(status)));
+            fail(chat, "发送失败", status == -2 ? "后台没有回应。" : status == -1 ? "连不上后台。" : data.optString("error", String.valueOf(status)));
         });
     }
 
@@ -1590,64 +1615,66 @@ public final class MainActivity extends Activity implements Bridge.Events {
     };
 
     private void settingsSheet() {
-        if (!linked) { toast("还没连上 Termux"); return; }
-        bridge.get("/launch", (status, launch) -> {
-            if (status != 200) { toast("读取启动设置失败"); return; }
-            settingsSheet(launch);
-        });
+        if (!linked) { settingsSheet(null); return; }
+        bridge.get("/launch", (status, launch) -> settingsSheet(status == 200 ? launch : null));
     }
 
+    /** Settings; the launch options only with the bridge running (null launch). */
     private void settingsSheet(JSONObject launch) {
         Dialog sheet = sheet("设置", null);
         LinearLayout box = content(sheet);
         LinearLayout actions = Ui.row(this);
-        TextView restart = button("重启桥接", false, v -> {
+        TextView restart = button("重启 Claude Code", false, v -> {
             sheet.dismiss();
-            toast("正在重启桥接…");
+            toast("正在重启…");
             linked = false;
             connect(true);
         });
         actions.addView(restart);
-        TextView termux = button("打开 Termux", false, v -> openTermux());
-        actions.addView(termux);
-        Ui.margins(termux, this, 8, 0, 0, 0);
+        TextView logs = button("运行日志", false, v -> { sheet.dismiss(); logSheet(); });
+        actions.addView(logs);
+        Ui.margins(logs, this, 8, 0, 0, 0);
         box.addView(actions, Ui.fill());
 
-        section(box, "启动命令");
-        LinearLayout cmd = card(sheet);
-        String mode = launch.optString("permissionMode", "bypassPermissions");
-        String modeLabel = mode;
-        for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1] + " · " + m[0];
-        String prompt = launch.optString("appendSystemPrompt");
-        String extra = launch.optString("extraArgs");
-        option(cmd, R.drawable.ic_terminal, "权限模式", modeLabel, false, () -> { sheet.dismiss(); permissionSheet(mode); });
-        option(cmd, R.drawable.ic_spark, "追加系统提示", prompt.trim().isEmpty() ? "未设置" : oneLine(prompt), false,
-                () -> { sheet.dismiss(); textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::settingsSheet); });
-        option(cmd, R.drawable.ic_edit_lines, "额外参数", extra.trim().isEmpty() ? "未设置" : extra, false,
-                () -> { sheet.dismiss(); textSheet("额外参数", extra, "例如：--max-turns 50 --add-dir ~/notes", false, (t, done) -> saveLaunch("extraArgs", t, done), this::settingsSheet); });
-        String folder = current.cwd == null || current.cwd.isEmpty() ? (cwd.isEmpty() ? defaultCwd : cwd) : current.cwd;
-        option(cmd, R.drawable.ic_book, "CLAUDE.md · 全局", "~/.claude/CLAUDE.md，每个对话都带上", false,
-                () -> { sheet.dismiss(); memorySheet("global", null, "CLAUDE.md · 全局"); });
-        option(cmd, R.drawable.ic_folder, "CLAUDE.md · 文件夹", tilde(folder) + "/CLAUDE.md", false,
-                () -> { sheet.dismiss(); memorySheet("folder", folder, "CLAUDE.md · " + tilde(folder)); });
-        TextView line = Ui.text(this, commandLine(mode, prompt, extra), 12, R.color.text3);
-        line.setTypeface(Ui.MONO);
-        line.setTextIsSelectable(true);
-        line.setPadding(dp(4), dp(8), dp(4), 0);
-        box.addView(line, Ui.fill());
+        section(box, "模型服务");
+        LinearLayout api = card(sheet);
+        JSONObject env = settingsEnv();
+        String url = env.optString("ANTHROPIC_BASE_URL");
+        option(api, R.drawable.ic_link, "API 设置", url.isEmpty() ? "Anthropic 官方" : url, false, () -> { sheet.dismiss(); apiSheet(); });
+        option(api, R.drawable.ic_file, "从 Termux 导入", "原来的配置、对话记录和 ~/work", false, () -> { sheet.dismiss(); importSheet(); });
 
-        section(box, "后台保活");
+        if (launch != null) {
+            section(box, "启动命令");
+            LinearLayout cmd = card(sheet);
+            String mode = launch.optString("permissionMode", "bypassPermissions");
+            String modeLabel = mode;
+            for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1] + " · " + m[0];
+            String prompt = launch.optString("appendSystemPrompt");
+            String extra = launch.optString("extraArgs");
+            option(cmd, R.drawable.ic_terminal, "权限模式", modeLabel, false, () -> { sheet.dismiss(); permissionSheet(mode); });
+            option(cmd, R.drawable.ic_spark, "追加系统提示", prompt.trim().isEmpty() ? "未设置" : oneLine(prompt), false,
+                    () -> { sheet.dismiss(); textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::settingsSheet); });
+            option(cmd, R.drawable.ic_edit_lines, "额外参数", extra.trim().isEmpty() ? "未设置" : extra, false,
+                    () -> { sheet.dismiss(); textSheet("额外参数", extra, "例如：--max-turns 50 --add-dir ~/notes", false, (t, done) -> saveLaunch("extraArgs", t, done), this::settingsSheet); });
+            String folder = current.cwd == null || current.cwd.isEmpty() ? (cwd.isEmpty() ? defaultCwd : cwd) : current.cwd;
+            option(cmd, R.drawable.ic_book, "CLAUDE.md · 全局", "~/.claude/CLAUDE.md，每个对话都带上", false,
+                    () -> { sheet.dismiss(); memorySheet("global", null, "CLAUDE.md · 全局"); });
+            option(cmd, R.drawable.ic_folder, "CLAUDE.md · 文件夹", tilde(folder) + "/CLAUDE.md", false,
+                    () -> { sheet.dismiss(); memorySheet("folder", folder, "CLAUDE.md · " + tilde(folder)); });
+            TextView line = Ui.text(this, commandLine(mode, prompt, extra), 12, R.color.text3);
+            line.setTypeface(Ui.MONO);
+            line.setTextIsSelectable(true);
+            line.setPadding(dp(4), dp(8), dp(4), 0);
+            box.addView(line, Ui.fill());
+        }
+
+        section(box, "权限与后台");
         LinearLayout keep = card(sheet);
+        option(keep, R.drawable.ic_folder, hasStorage() ? "已允许访问手机存储" : "允许访问手机存储",
+                "在 Claude Code 里是 /sdcard", false, () -> { if (!hasStorage()) { sheet.dismiss(); requestStorage(); } });
         android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
         boolean exempt = pm.isIgnoringBatteryOptimizations(getPackageName());
-        option(keep, R.drawable.ic_termux_app, "Termux 应用设置", "耗电管理里允许后台行为和自启动", false, () -> {
-            try {
-                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + Bridge.TERMUX)));
-            } catch (RuntimeException e) {
-                toast("打不开 Termux 的应用设置");
-            }
-        });
-        option(keep, R.drawable.ic_check, exempt ? "本 App 已不受电池优化" : "让本 App 不受电池优化", null, false, () -> {
+        option(keep, R.drawable.ic_check, exempt ? "已不受电池优化" : "不受电池优化", null, false, () -> {
             if (exempt) return;
             try {
                 startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
@@ -1655,9 +1682,19 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 toast("系统不支持这个设置");
             }
         });
-        String rish = "rish -c 'dumpsys deviceidle whitelist +com.termux; dumpsys deviceidle whitelist +" + getPackageName()
-                + "; cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow; cmd appops set com.termux RUN_IN_BACKGROUND allow'";
-        option(keep, R.drawable.ic_copy, "复制 rish 白名单命令", null, false, () -> copy(rish));
+        option(keep, R.drawable.ic_gear, "应用设置", "耗电管理里允许完全后台行为和自启动", false, () -> {
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+            } catch (RuntimeException e) {
+                toast("打不开应用设置");
+            }
+        });
+        // Android 12+ kills an app's child processes beyond a limit, or busy ones in the background.
+        String rish = "rish -c 'dumpsys deviceidle whitelist +" + getPackageName()
+                + "; cmd appops set " + getPackageName() + " RUN_ANY_IN_BACKGROUND allow"
+                + "; settings put global settings_enable_monitor_phantom_procs false"
+                + "; device_config put activity_manager max_phantom_processes 2147483647'";
+        option(keep, R.drawable.ic_copy, "复制 rish 保活命令", "白名单，并关掉安卓的子进程限制", false, () -> copy(rish));
 
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { /* none */ }
@@ -1666,6 +1703,216 @@ public final class MainActivity extends Activity implements Bridge.Events {
         v.setPadding(0, dp(14), 0, 0);
         box.addView(v, Ui.fill());
         sheet.show();
+    }
+
+    // ---- Claude Code's settings.json, read and written here directly ----
+
+    private java.io.File settingsFile() { return userland.file(Userland.HOME + "/.claude/settings.json"); }
+
+    private JSONObject settingsJson() {
+        try {
+            return new JSONObject(Userland.read(new java.io.FileInputStream(settingsFile())));
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    private JSONObject settingsEnv() {
+        JSONObject env = settingsJson().optJSONObject("env");
+        return env != null ? env : new JSONObject();
+    }
+
+    /** Writes settings.json; running conversations pick it up on their next message. */
+    private boolean saveSettings(JSONObject json) {
+        try {
+            Userland.write(settingsFile(), json.toString(2) + "\n");
+        } catch (Exception e) {
+            toast("保存失败：" + e.getMessage());
+            return false;
+        }
+        if (linked) {
+            bridge.post("/launch", new JSONObject(), null); // restarts idle conversations with it
+            bridge.get("/config", (status, data) -> {
+                if (status != 200) return;
+                models.clear();
+                JSONArray m = data.optJSONArray("models");
+                for (int i = 0; m != null && i < m.length(); i++) models.add(m.optString(i));
+                defaultModel = data.optString("defaultModel");
+                authSet = data.optBoolean("auth", true);
+                renderNow();
+            });
+        }
+        return true;
+    }
+
+    private void apiSheet() {
+        Dialog sheet = sheet("API 设置", "写进 ~/.claude/settings.json。DeepSeek、GPT 网关等任何 Anthropic 格式的接口都行；地址留空就是 Anthropic 官方。");
+        JSONObject env = settingsEnv();
+        String key = env.optString("ANTHROPIC_AUTH_TOKEN", env.optString("ANTHROPIC_API_KEY"));
+        EditText url = field(sheet, "API 地址", env.optString("ANTHROPIC_BASE_URL"), "例如 https://api.deepseek.com/anthropic");
+        EditText token = field(sheet, "API Key", key, "sk-…");
+        EditText name = field(sheet, "默认模型（可不填）", env.optString("ANTHROPIC_MODEL"), "例如 deepseek-chat");
+        LinearLayout actions = Ui.row(this);
+        TextView raw = button("编辑 settings.json", false, v -> {
+            sheet.dismiss();
+            String text;
+            try { text = settingsJson().toString(2); } catch (JSONException e) { text = "{}"; }
+            textSheet("settings.json", text, "{ }", true, (t, done) -> {
+                JSONObject json;
+                try { json = new JSONObject(t.trim().isEmpty() ? "{}" : t); } catch (JSONException e) { toast("不是有效的 JSON：" + e.getMessage()); return; }
+                if (saveSettings(json)) { toast("已保存"); done.run(); }
+            }, null);
+        });
+        TextView ok = button("保存", true, v -> {
+            JSONObject json = settingsJson();
+            JSONObject e = json.optJSONObject("env");
+            if (e == null) e = new JSONObject();
+            put(e, "ANTHROPIC_BASE_URL", url.getText().toString().trim());
+            String k = token.getText().toString().trim();
+            // One key variable: an auth token works with every provider (and Anthropic's own).
+            e.remove("ANTHROPIC_API_KEY");
+            put(e, "ANTHROPIC_AUTH_TOKEN", k);
+            put(e, "ANTHROPIC_MODEL", name.getText().toString().trim());
+            try { json.put("env", e); } catch (JSONException ignored) { /* string key */ }
+            if (saveSettings(json)) { toast("已保存，下一条消息起生效"); sheet.dismiss(); }
+        });
+        ok.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
+        ok.setTextColor(col(R.color.bg));
+        actions.addView(raw, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(ok, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Ui.margins(ok, this, 10, 0, 0, 0);
+        content(sheet).addView(actions, Ui.fill());
+        Ui.margins(actions, this, 0, 14, 0, 0);
+        if (sheet.getWindow() != null) sheet.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        sheet.show();
+    }
+
+    private static void put(JSONObject o, String key, String value) {
+        if (value.isEmpty()) { o.remove(key); return; }
+        try { o.put(key, value); } catch (JSONException ignored) { /* string key */ }
+    }
+
+    private EditText field(Dialog sheet, String label, String value, String hint) {
+        TextView l = Ui.text(this, label, 13, R.color.text2);
+        l.setPadding(dp(2), dp(8), 0, dp(6));
+        content(sheet).addView(l);
+        EditText f = new EditText(this);
+        f.setText(value);
+        f.setHint(hint);
+        f.setSingleLine(true);
+        f.setTextSize(14.5f);
+        f.setTypeface(Ui.MONO);
+        f.setTextColor(col(R.color.text));
+        f.setHintTextColor(col(R.color.text3));
+        f.setPadding(dp(12), 0, dp(12), 0);
+        f.setBackground(Ui.round(col(R.color.surface), dp(10), dp(1), col(R.color.borderStrong)));
+        content(sheet).addView(f, new LinearLayout.LayoutParams(-1, dp(44)));
+        return f;
+    }
+
+    private static final String TERMUX_HOME = "/data/data/com.termux/files/home";
+
+    private void importSheet() {
+        String command = "mkdir -p /sdcard/Download/ccapp && cp -r ~/.claude ~/work /sdcard/Download/ccapp/";
+        Dialog sheet = sheet("从 Termux 导入", "先在 Termux 里运行下面这行，把原来的配置、对话记录和 ~/work 复制到手机存储；"
+                + "提示 Permission denied 的话先运行一次 termux-setup-storage。然后点导入。");
+        TextView code = Ui.text(this, command, 12.5f, R.color.text);
+        code.setTypeface(Ui.MONO);
+        code.setTextIsSelectable(true);
+        code.setPadding(dp(11), dp(9), dp(11), dp(9));
+        code.setBackground(Ui.round(col(R.color.codeBg), dp(10), dp(1), col(R.color.border)));
+        content(sheet).addView(code, Ui.fill());
+        LinearLayout actions = Ui.row(this);
+        TextView cp = button("复制命令", false, v -> copy(command));
+        TextView go = button("导入", true, v -> {
+            sheet.dismiss();
+            if (hasStorage()) importFromTermux();
+            else { afterStorage = this::importFromTermux; requestStorage(); }
+        });
+        go.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
+        go.setTextColor(col(R.color.bg));
+        actions.addView(cp, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(go, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Ui.margins(go, this, 10, 0, 0, 0);
+        content(sheet).addView(actions, Ui.fill());
+        Ui.margins(actions, this, 0, 14, 0, 0);
+        sheet.show();
+    }
+
+    /** Copies what Termux put in Download/ccapp into /root, moving Termux's home paths to /root. */
+    private void importFromTermux() {
+        java.io.File from = new java.io.File(android.os.Environment.getExternalStorageDirectory(), "Download/ccapp");
+        if (!new java.io.File(from, ".claude").isDirectory() && !new java.io.File(from, "work").isDirectory()) {
+            toast("没找到 Download/ccapp，先在 Termux 里运行那行命令");
+            return;
+        }
+        toast("正在导入…");
+        work.execute(() -> {
+            int[] count = {0};
+            String error = null;
+            try {
+                java.io.File home = userland.file(Userland.HOME);
+                copyTree(new java.io.File(from, ".claude"), new java.io.File(home, ".claude"), count);
+                copyTree(new java.io.File(from, "work"), new java.io.File(home, "work"), count);
+            } catch (Exception e) {
+                error = e.getMessage() != null ? e.getMessage() : e.toString();
+            }
+            String err = error;
+            ui.post(() -> {
+                if (err != null) { toast("导入出错：" + err); return; }
+                toast("已导入 " + count[0] + " 个文件");
+                if (linked) {
+                    bridge.post("/launch", new JSONObject(), null);
+                    afterLink();
+                }
+            });
+        });
+    }
+
+    private static final java.util.Set<String> SKIP_IMPORT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "downloads", "local", "shell-snapshots", "ide", "statsig", "debug", "cache", "telemetry"));
+
+    private void copyTree(java.io.File from, java.io.File to, int[] count) throws java.io.IOException {
+        if (!from.exists()) return;
+        if (from.isDirectory()) {
+            if (SKIP_IMPORT.contains(from.getName()) && ".claude".equals(from.getParentFile().getName())) return;
+            java.io.File[] items = from.listFiles();
+            if (items == null) return;
+            for (java.io.File f : items) {
+                // Claude Code keeps a project's sessions under its folder's path with / as -.
+                String name = f.getName().replace(TERMUX_HOME.replace('/', '-').replace('.', '-'), Userland.HOME.replace('/', '-'));
+                copyTree(f, new java.io.File(to, name), count);
+            }
+            return;
+        }
+        if (!to.getParentFile().isDirectory() && !to.getParentFile().mkdirs()) throw new java.io.IOException("mkdir " + to.getParent());
+        String n = from.getName();
+        if (n.endsWith(".jsonl") || n.endsWith(".json") || n.endsWith(".md")) {
+            String text = Userland.read(new java.io.FileInputStream(from));
+            Userland.write(to, text.replace(TERMUX_HOME, Userland.HOME));
+        } else {
+            try (InputStream in = new java.io.FileInputStream(from); java.io.OutputStream out = new java.io.FileOutputStream(to)) {
+                Userland.copy(in, out);
+            }
+        }
+        count[0]++;
+    }
+
+    private void logSheet() {
+        String bridgeLog = Userland.tail(userland.file(Userland.HOME + "/.ccapp/bridge.log"), 16_000);
+        String runLog = Userland.tail(userland.log, 8_000);
+        String text = "== bridge.log ==\n" + (bridgeLog.isEmpty() ? "（空）\n" : bridgeLog) + "\n== 启动 ==\n" + (runLog.isEmpty() ? "（空）\n" : runLog);
+        Dialog sheet = sheet("运行日志", null);
+        TextView t = Ui.text(this, text, 11.5f, R.color.text);
+        t.setTypeface(Ui.MONO);
+        t.setTextIsSelectable(true);
+        content(sheet).addView(t, Ui.fill());
+        TextView cp = button("复制全部", false, v -> copy(text));
+        content(sheet).addView(cp);
+        Ui.margins(cp, this, 0, 12, 0, 0);
+        sheet.show();
+        ScrollView scroll = (ScrollView) content(sheet).getParent();
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
     private static String oneLine(String text) {
@@ -1778,11 +2025,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         } catch (RuntimeException e) {
             toast(url);
         }
-    }
-
-    private void openTermux() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(Bridge.TERMUX);
-        if (launch != null) startActivity(launch); else toast("没有找到 Termux");
     }
 
     private void toast(String text) { Toast.makeText(this, text, Toast.LENGTH_SHORT).show(); }

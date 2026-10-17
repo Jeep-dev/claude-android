@@ -1,35 +1,37 @@
-# Claude Code for Android (v0.3.21)
+# Claude Code for Android (v0.4.0)
 
-A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
+Claude Code on the phone in one app, no Termux needed. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
 interface is plain Android views (Java), so scrolling and text selection are the system's own.
 
 ## How it works
 
-- `assets/bridge.py` runs in Termux (standard-library Python). The app starts it in the
-  background through Termux's `RUN_COMMAND` service, passing the script and a random
-  per-install token. It listens on `127.0.0.1:8765` only and rejects requests without the
-  token. A newly started bridge replaces one already running (a lock held for the bridge's life
-  leaves only the newest when several start at once); the app also replaces a running
-  bridge of another version. Requests to the bridge never go through a proxy (a VPN app's
-  proxy could hold them); a health check times out after 3 s and a newly started bridge has
-  12 s to answer, after which the app shows the setup steps. Tapping the connection status
-  while connecting restarts the bridge. When the link stays down for 2 s with the app open, the
-  app checks the bridge (three tries, so a busy one is not taken for dead) and starts it again
-  if it is gone, never twice within 15 s; turns the old bridge was running are
-  marked interrupted (a new message continues the conversation). The bridge logs its starts,
-  stops (with the app's reason for starting it), crashes, every request but health checks
-  (status and time), the app's event stream coming and going, each Claude Code process (start,
-  API retries, turn results, exit code and stderr), a turn with no output for a minute, times
-  the bridge was paused by the system, and transcript entries it could not read (left out of
-  the conversation) to `~/.ccapp/bridge.log` (a start with no stop before the next means it was
-  killed).
-- The bridge takes Termux's wake lock (`termux-wake-lock`) when it starts and never releases it;
-  Termux asks once to be left out of battery optimization.
-  Settings → 后台保活 opens Termux's app settings (ColorOS: allow background activity and
-  auto-start), asks to leave this app out of battery optimization, and copies a `rish` command
-  that adds both apps to the system's idle whitelist and allows Termux to run in the
-  background.
+- The app carries its own Linux userland: Alpine (bash, Python, git, ripgrep, curl) with Claude
+  Code's linux-arm64-musl build, packed as `assets/runtime/rootfs.tar.xz` by
+  `runtime/build-rootfs.sh`, and Termux's proot (`runtime/fetch-proot.sh`). Both are built in
+  CI (cached by the scripts' hash; Claude Code's version is pinned in the script). On first
+  launch, or after an update that brings a new userland, the app unpacks it into its files
+  (over what is there: `/root` and packages added with `apk add` stay). targetSdk is 28 so the
+  app may run programs from its own files, as Termux does.
+- `BridgeService`, a foreground service holding a wake lock it never releases, runs
+  `assets/bridge.py` under proot as root of the userland (`IS_SANDBOX=1` lets Claude Code skip
+  permission prompts as that root), with a random per-install token; it listens on
+  `127.0.0.1:8766` only and rejects requests without the token. The service starts it again
+  when it dies on its own (at most three times a minute). Phone storage is shared in as
+  `/sdcard` once the app may read it; DNS servers come from the current network.
+- The app checks the bridge (three tries, so a busy one is not taken for dead), has the
+  service start it when it is gone or of another version, and gives it 30 s to answer. When
+  the link stays down for 2 s with the app open, it does the same, never twice within 30 s;
+  turns the old bridge was running are marked interrupted (a new message continues the
+  conversation). Requests to the bridge never go through a proxy. The bridge logs its starts,
+  stops, crashes, requests, each Claude Code process (start, API retries, turn results, exit
+  code and stderr), quiet turns and times it was paused by the system to `~/.ccapp/bridge.log`;
+  Settings → 运行日志 shows it with the service's own log.
+- Settings → API 设置 writes `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_MODEL`
+  into `~/.claude/settings.json` (or edits the file whole); 从 Termux 导入 copies `~/.claude`
+  and `~/work` that Termux put in `Download/ccapp`, moving Termux's home paths to `/root` so old
+  conversations resume. The `rish` command in Settings whitelists the app and turns off
+  Android's limit on child processes.
 - Each conversation is a `claude -p --input-format stream-json --output-format stream-json`
   process (bypass-permissions mode unless changed in Settings → 启动命令, which also sets text
   for `--append-system-prompt` and extra arguments, kept in `~/.ccapp/launch.json`, and edits
@@ -73,12 +75,8 @@ Claude Code's own `/effort`). Everything else, such as `/compact`, `/context`, `
 
 ## Setup on the phone
 
-1. Termux (F-Droid or GitHub build) with Claude Code and Python (`pkg install python`).
-2. Allow other apps to run Termux commands, once:
-   `mkdir -p ~/.termux && echo "allow-external-apps=true" >> ~/.termux/termux.properties && termux-reload-settings`
-3. Grant the app "Run commands in Termux environment" when it asks.
-
-The app shows these steps itself when it cannot reach the bridge.
+Install and open: the app unpacks its userland (about half a minute), then asks for an API
+address and key, or to import the old setup from Termux.
 
 ## Screenshots without a phone
 

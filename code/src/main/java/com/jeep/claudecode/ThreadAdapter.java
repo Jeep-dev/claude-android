@@ -606,8 +606,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         h.elapsed.setText(secs > 0 ? secs + "s" : "");
         long quiet = (now - Math.max(chat.lastEvent, chat.startedAt)) / 1000;
         long silent = Bridge.lastAlive == 0 ? 0 : (now - Bridge.lastAlive) / 1000;
-        // Whose turn it is: Termux not answering at all, a command still running, or the model.
-        String detail = silent >= 8 ? "Termux " + silent + "s 没有响应，可能被系统冻结"
+        // Whose turn it is: the bridge not answering at all, a command still running, or the model.
+        String detail = silent >= 8 ? "后台 " + silent + "s 没有响应，可能被系统冻结"
                 : !chat.detail.isEmpty() ? chat.detail
                 : quiet < 20 ? ""
                 : toolRunning() ? "命令还在运行，" + quiet + "s 没有输出"
