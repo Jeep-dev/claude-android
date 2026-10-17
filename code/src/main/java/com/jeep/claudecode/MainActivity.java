@@ -131,6 +131,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
             if (adapter != null) adapter.tick();
+            updateLink();
             ui.postDelayed(this, 120);
         }
     };
@@ -948,12 +949,20 @@ public final class MainActivity extends Activity implements Bridge.Events {
         loadHistory(current);
     }
 
+    private String shownLink;
+
     private void updateLink() {
         if (linkDot == null) return;
-        int dot = linked ? R.color.ok : connecting ? R.color.text3 : R.color.danger;
+        // Connected only while the bridge keeps pinging: a frozen Termux keeps the connection open.
+        boolean silent = linked && Bridge.lastAlive > 0 && System.currentTimeMillis() - Bridge.lastAlive > 8000;
+        String label = silent ? "Termux 没有响应" : linked ? "已连接 Termux" : connecting ? "正在连接…" : "未连接 · 点此重试";
+        int bannerShown = !linked && !connecting && setup == null && everLinked ? View.VISIBLE : View.GONE;
+        if (banner.getVisibility() != bannerShown) banner.setVisibility(bannerShown);
+        if (label.equals(shownLink)) return;
+        shownLink = label;
+        int dot = silent ? R.color.warn : linked ? R.color.ok : connecting ? R.color.text3 : R.color.danger;
         linkDot.setBackground(Ui.round(col(dot), dp(4)));
-        linkText.setText(linked ? "已连接 Termux" : connecting ? "正在连接…" : "未连接 · 点此重试");
-        banner.setVisibility(!linked && !connecting && setup == null && everLinked ? View.VISIBLE : View.GONE);
+        linkText.setText(label);
     }
 
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {

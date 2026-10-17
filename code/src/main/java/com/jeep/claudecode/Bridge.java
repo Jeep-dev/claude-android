@@ -40,7 +40,7 @@ final class Bridge {
     private static final int PORT = 8765;
     private static final String BASE = "http://127.0.0.1:" + PORT;
     /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
-    private static final int VERSION = 8;
+    private static final int VERSION = 9;
 
     interface Reply { void done(int status, JSONObject data); }
     interface Events { void events(List<JSONObject> batch); void link(boolean up); }
@@ -57,6 +57,8 @@ final class Bridge {
     private boolean flushQueued;
     /** When this app last asked Termux to start the bridge: a start still under way is not repeated. */
     private volatile long startedAt;
+    /** When the bridge last sent anything (it pings every 5 s); 0 before the first. */
+    static volatile long lastAlive;
 
     Bridge(Context context, Events listener) {
         this.context = context.getApplicationContext();
@@ -240,7 +242,7 @@ final class Bridge {
             try {
                 c = (HttpURLConnection) new URL(BASE + "/events?since=" + lastSeq).openConnection(Proxy.NO_PROXY);
                 c.setConnectTimeout(3000);
-                c.setReadTimeout(40000);
+                c.setReadTimeout(15000); // three missed pings: the bridge is gone or frozen
                 c.setRequestProperty("X-Token", token);
                 if (c.getResponseCode() != 200) throw new IOException("status " + c.getResponseCode());
                 if (!up) {
@@ -250,6 +252,7 @@ final class Bridge {
                 BufferedReader reader = new BufferedReader(
                         new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
                 for (String line; reading && (line = reader.readLine()) != null; ) {
+                    lastAlive = System.currentTimeMillis();
                     if (!line.startsWith("data: ")) continue;
                     try {
                         JSONObject event = new JSONObject(line.substring(6));

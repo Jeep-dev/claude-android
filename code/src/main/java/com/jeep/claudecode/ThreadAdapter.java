@@ -597,10 +597,23 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         long secs = (now - (chat.startedAt == 0 ? now : chat.startedAt)) / 1000;
         h.elapsed.setText(secs > 0 ? secs + "s" : "");
         long quiet = (now - Math.max(chat.lastEvent, chat.startedAt)) / 1000;
-        String detail = !chat.detail.isEmpty() ? chat.detail : quiet >= 20 ? quiet + "s 没有动静" : "";
+        long silent = Bridge.lastAlive == 0 ? 0 : (now - Bridge.lastAlive) / 1000;
+        // Whose turn it is: Termux not answering at all, a command still running, or the model.
+        String detail = silent >= 8 ? "Termux " + silent + "s 没有响应，可能被系统冻结"
+                : !chat.detail.isEmpty() ? chat.detail
+                : quiet < 20 ? ""
+                : toolRunning() ? "命令还在运行，" + quiet + "s 没有输出"
+                : "等模型回复，" + quiet + "s 没有输出";
         h.detail.setText(detail);
         h.detail.setVisibility(detail.isEmpty() ? View.GONE : View.VISIBLE);
         h.detail.setTextColor(Ui.color(c, detail.isEmpty() ? R.color.text3 : R.color.warn));
+    }
+
+    private boolean toolRunning() {
+        if (chat.messages.isEmpty()) return false;
+        for (Chat.Block b : chat.messages.get(chat.messages.size() - 1).blocks)
+            if (b.kind == Chat.Block.TOOL && b.running) return true;
+        return false;
     }
 
     private void footer(LinearLayout box, Chat.Msg m) {

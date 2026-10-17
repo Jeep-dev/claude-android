@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 8  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 9  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -732,7 +732,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
             log('events: app connected')
             while True:
-                batch = hub.after(since, 15)
+                batch = hub.after(since, 5)  # a ping at least every 5 s: the app can tell a live bridge
                 if not batch:
                     self.wfile.write(b': ping\n\n')
                 for e in batch:
