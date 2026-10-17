@@ -75,6 +75,7 @@
   const S = {
     linked: false, connecting: false, setup: null,
     home: '', defaultCwd: '', cwd: store.get('cwd', ''), model: store.get('model', ''), models: [],
+    effort: store.get('effort', ''), commands: store.get('commands', []),
     sessions: [], chats: new Map(), bySession: new Map(), current: null,
     stick: true, search: '',
   };
@@ -123,8 +124,8 @@
     }
   }
   const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '\n…' : s; };
-  function io(label, text, cls = '') {
-    return `<div class="io ${cls}"><div class="io-label">${label}</div><pre>${esc(clip(text, 6000))}</pre></div>`;
+  function io(text, cls = '') {
+    return `<div class="io ${cls}"><pre>${esc(clip(text, 6000))}</pre></div>`;
   }
   function diff(oldText, newText) {
     const lines = [];
@@ -135,12 +136,12 @@
   function toolBody(b) {
     const i = b.input || {};
     const parts = [];
-    if (b.name === 'Bash') parts.push(io('命令', i.command));
+    if (b.name === 'Bash') parts.push(io('$ ' + (i.command || ''), 'cmd-in'));
     else if (b.name === 'Edit') parts.push(diff(i.old_string, i.new_string));
     else if (b.name === 'MultiEdit') (i.edits || []).forEach(e => parts.push(diff(e.old_string, e.new_string)));
-    else if (b.name === 'Write') parts.push(io(esc(i.file_path || '内容'), i.content));
-    else if (b.name !== 'Read' && b.name !== 'TodoWrite') parts.push(io('参数', JSON.stringify(i, null, 2)));
-    if (b.result != null && b.result !== '') parts.push(io(b.isError ? '错误' : '结果', b.result, b.isError ? 'err' : ''));
+    else if (b.name === 'Write') parts.push(io(i.content));
+    else if (b.name !== 'Read' && b.name !== 'TodoWrite') parts.push(io(JSON.stringify(i, null, 2), 'cmd-in'));
+    if (b.result != null && b.result !== '') parts.push(io(b.result, b.isError ? 'err' : ''));
     return parts.join('');
   }
   function todos(b) {
@@ -178,10 +179,16 @@
       el.textContent = m.text;
       return el;
     }
+    if (m.role === 'note') {
+      el.className = 'note';
+      el.innerHTML = m.html;
+      return el;
+    }
     el.className = 'msg ' + m.role;
     if (m.role === 'user') {
       const imgs = (m.images || []).map(src => src ? `<img src="${esc(src)}" alt="">` : '<div class="missing">图片</div>').join('');
-      el.innerHTML = (imgs ? `<div class="user-images">${imgs}</div>` : '') + (m.text ? `<div class="bubble">${esc(m.text)}</div>` : '');
+      const files = (m.files || []).map(n => `<div class="user-file">${icon('file')}<span>${esc(n)}</span></div>`).join('');
+      el.innerHTML = (imgs ? `<div class="user-images">${imgs}</div>` : '') + files + (m.text ? `<div class="bubble">${esc(m.text)}</div>` : '');
       return el;
     }
     const live = last && chat.running;
@@ -197,7 +204,7 @@
     else if (m.done) {
       const foot = document.createElement('div');
       foot.className = 'msg-foot';
-      const usage = m.usage ? `上下文 ${fmtTokens(m.usage.context)} · 输出 ${fmtTokens(m.usage.output)}${m.seconds ? ` · ${m.seconds} 秒` : ''}` : '';
+      const usage = m.usage ? `↑${fmtTokens(m.usage.context)} ↓${fmtTokens(m.usage.output)} CH ${fmtTokens(m.usage.cached)}` : '';
       foot.innerHTML = `<button class="icon-btn" data-copy-msg aria-label="复制">${icon('copy')}</button><span class="usage">${usage}</span>`;
       if (m.blocks.some(b => b.type === 'text')) el.appendChild(foot);
     }
@@ -207,7 +214,7 @@
   function statusEl(chat) {
     const el = document.createElement('div');
     el.className = 'status';
-    el.innerHTML = `<span class="glyph">${GLYPHS[0]}</span><span class="verb">${chat.verb || VERBS[0]}…</span><span class="elapsed"></span>`;
+    el.innerHTML = `<span class="glyph">${GLYPHS[0]}</span><span class="verb">${chat.verb || VERBS[0]}…</span><span class="elapsed"></span><span class="detail"></span>`;
     return el;
   }
 
@@ -293,7 +300,12 @@
     thread.querySelectorAll('.status').forEach(el => {
       el.querySelector('.glyph').textContent = GLYPHS[n % GLYPHS.length];
       el.querySelector('.verb').textContent = (chat.verb || VERBS[0]) + '…';
-      el.querySelector('.elapsed').textContent = secs ? `${secs} 秒` : '';
+      el.querySelector('.elapsed').textContent = secs ? `${secs}s` : '';
+      const quiet = Math.floor((Date.now() - (chat.lastEvent || chat.startedAt || Date.now())) / 1000);
+      const detail = chat.detail || (quiet >= 20 ? `${quiet}s 没有动静` : '');
+      const d = el.querySelector('.detail');
+      d.textContent = detail;
+      d.classList.toggle('warn', !!detail);
     });
   }
   setInterval(tickStatus, 120);
@@ -301,7 +313,7 @@
   function updateChrome() {
     const chat = cur();
     $('title').textContent = chat.title || '新对话';
-    $('subtitle').textContent = chat.messages.length ? `${base(chat.cwd)} · ${shortModel(chat.model || S.model || S.defaultModel)}` : '';
+
     $('folderName').textContent = base(chat.cwd || S.defaultCwd || '~');
     $('folderBtn').classList.toggle('locked', !!chat.sessionId);
     $('modelName').textContent = shortModel(S.model || S.defaultModel);
@@ -434,6 +446,19 @@
         S.bySession.set(d.session_id, chat.key);
       }
       chat.model = d.model || chat.model;
+      if (Array.isArray(d.slash_commands) && d.slash_commands.length) {
+        S.commands = d.slash_commands.filter(c => !c.startsWith('_'));
+        store.set('commands', S.commands);
+      }
+      return;
+    }
+    if (t === 'system' && d.subtype === 'api_retry') {
+      const why = d.error_status ? `${d.error_status}${d.error ? ' ' + d.error : ''}` : (d.error || '');
+      chat.detail = `重试 ${d.attempt}/${d.max_retries}${why ? ' · ' + why : ''}`;
+      return;
+    }
+    if (t === 'system' && d.subtype === 'status') {
+      if (d.status === 'requesting') chat.detail = '';
       return;
     }
     if (t === 'system' && d.subtype === 'compact_boundary') {
@@ -515,7 +540,7 @@
       }
       const u = d.usage || {};
       const last = chat.lastUsage || u; // usage of the latest request: its context size
-      m.usage = { context: (last.input_tokens || 0) + (last.cache_read_input_tokens || 0) + (last.cache_creation_input_tokens || 0), output: u.output_tokens || 0 };
+      m.usage = { context: (last.input_tokens || 0) + (last.cache_read_input_tokens || 0) + (last.cache_creation_input_tokens || 0), output: u.output_tokens || 0, cached: last.cache_read_input_tokens || 0 };
       m.seconds = d.duration_ms ? Math.round(d.duration_ms / 100) / 10 : 0;
       m.done = true;
       m.dirty = true;
@@ -527,6 +552,8 @@
   }
   function onEvent(ev) {
     const chat = chatForEvent(ev);
+    chat.lastEvent = Date.now();
+    if (ev.kind === 'cc' && ev.data.type === 'stream_event') chat.detail = '';
     if (ev.kind === 'cc') {
       const d = ev.data;
       if (d.type === 'stream_event' && d.event && d.event.type === 'message_start' && !d.parent_tool_use_id) {
@@ -551,12 +578,20 @@
     if (chat.running) return stop();
     const text = $('input').value.replace(/\s+$/, '');
     if (!text.trim() && !chat.images.length) return;
+    if (/^\/\S/.test(text) && !text.includes('\n') && localCommand(text)) {
+      $('input').value = '';
+      chat.draft = '';
+      autosize();
+      hideMenu();
+      updateChrome();
+      return;
+    }
     if (!S.linked) return toast('还没连上 Termux');
-    const content = [];
-    chat.images.forEach(img => content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } }));
-    if (text.trim()) content.push({ type: 'text', text });
-    chat.messages.push({ role: 'user', text, images: chat.images.map(i => i.url), dirty: true });
-    if (!chat.title) chat.title = (text || '图片').split('\n')[0].slice(0, 60);
+    const attached = chat.images;
+    const pics = attached.filter(a => a.kind === 'image');
+    const files = attached.filter(a => a.kind === 'file');
+    chat.messages.push({ role: 'user', text, images: pics.map(i => i.url), files: files.map(f => f.name), dirty: true });
+    if (!chat.title) chat.title = (text || (files[0] && files[0].name) || '图片').split('\n')[0].slice(0, 60);
     if (!chat.cwd) chat.cwd = S.cwd || S.defaultCwd;
     chat.images = [];
     chat.running = true;
@@ -567,7 +602,35 @@
     autosize();
     S.stick = true;
     render();
-    const r = await call('POST', '/send', { chat: chat.key, sessionId: chat.sessionId, cwd: chat.cwd, model: S.model || null, content });
+    hideMenu();
+    const fail = msg => {
+      chat.running = false;
+      const m = lastAssistant(chat, true);
+      m.blocks.push({ type: 'error', title: '发送失败', text: msg });
+      m.done = true; m.dirty = true;
+      render();
+    };
+    // Files other than pictures are saved into the working folder, where Claude Code can read them.
+    const saved = [];
+    for (const f of files) {
+      const u = await call('POST', '/upload', { cwd: chat.cwd, name: f.name, data: f.data });
+      if (u.status !== 200) return fail(`${f.name} 没能存到 ${base(chat.cwd)}：${(u.data && u.data.error) || u.status}`);
+      saved.push(u.data.path);
+    }
+    const content = [];
+    pics.forEach(img => content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } }));
+    const note = saved.length ? `${saved.length > 1 ? '附件已保存到' : '附件已保存为'}：\n${saved.map(p => '- ' + p).join('\n')}` : '';
+    const full = [text.trim() ? text : '', note].filter(Boolean).join('\n\n');
+    if (full) content.push({ type: 'text', text: full });
+    const sentAt = Date.now();
+    const body = { chat: chat.key, sessionId: chat.sessionId, cwd: chat.cwd, model: S.model || null, effort: S.effort || null, content, mid: chat.key + ':' + sentAt };
+    let r = await call('POST', '/send', body);
+    for (let i = 0; r.status === -1 && i < 2; i++) {
+      // The request may have arrived with only the answer lost: the bridge ignores a repeated mid.
+      await new Promise(ok => setTimeout(ok, 1200));
+      r = await call('POST', '/send', body);
+    }
+    if (r.status !== 200 && (chat.lastEvent || 0) > sentAt) return; // it is running after all
     if (r.status !== 200) {
       chat.running = false;
       const m = lastAssistant(chat, true);
@@ -582,10 +645,117 @@
     await call('POST', '/stop', { chat: chat.key });
   }
 
+  // ---------- slash commands ----------
+  const EFFORTS = { low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高' };
+  const EFFORT_ALIASES = { 低: 'low', 中: 'medium', 高: 'high', 超高: 'xhigh', 最高: 'max', default: '', 默认: '', auto: '' };
+  // Handled here; the rest go to Claude Code as they are.
+  const LOCAL = {
+    help: ['', '显示所有命令'],
+    new: ['', '新对话'],
+    clear: ['', '新对话（清空上下文）'],
+    effort: ['low|medium|high|xhigh|max|default', '思考级别，从下一条消息起生效'],
+    model: ['名称', '切换模型，不带名称则打开选择'],
+    folder: ['', '选择新对话的工作文件夹'],
+    stop: ['', '停止当前回复'],
+  };
+  const KNOWN = {
+    compact: ['说明', '压缩上下文，可附上要保留的重点'],
+    context: ['', '查看上下文占用'],
+    cost: ['', '查看这次对话的用量'],
+    init: ['', '扫描项目，生成 CLAUDE.md'],
+    recap: ['', '总结这次对话'],
+    review: ['', '审查当前改动'],
+    'security-review': ['', '安全审查当前改动'],
+    simplify: ['', '简化刚改过的代码'],
+  };
+  const HIDDEN = new Set(['clear', 'model', 'effort', 'heapdump', 'color', 'config', 'focus', 'fast', 'mcp', 'agents', 'output-style',
+    'reload-plugins', 'reload-skills', 'auto-mode-setup', 'autocompact', 'rename', 'usage', 'insights', 'goal', 'design-consent',
+    'design-revoke', 'list-agents', 'team-onboarding', 'workflow-launch-exec', 'doctor']);
+  function commandList() {
+    const list = Object.entries(LOCAL).map(([name, [args, desc]]) => ({ name, args, desc }));
+    Object.entries(KNOWN).forEach(([name, [args, desc]]) => list.push({ name, args, desc }));
+    S.commands.forEach(name => {
+      if (!LOCAL[name] && !KNOWN[name] && !HIDDEN.has(name)) list.push({ name, args: '', desc: '技能' });
+    });
+    return list;
+  }
+  function note(html) {
+    const chat = cur();
+    chat.messages.push({ role: 'note', html, dirty: true });
+    S.stick = true;
+    render();
+  }
+  function localCommand(text) {
+    const [, name, rest = ''] = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/) || [];
+    const arg = rest.trim();
+    switch (name) {
+      case 'help':
+        note(`<div class="note-title">命令</div>${commandList().map(c => `<div class="note-row"><code>/${esc(c.name)}${c.args ? ' ' + esc(c.args) : ''}</code><span>${esc(c.desc)}</span></div>`).join('')}`);
+        return true;
+      case 'new': case 'clear':
+        switchTo(newChat().key);
+        return true;
+      case 'stop':
+        if (cur().running) stop(); else toast('现在没有在运行');
+        return true;
+      case 'folder':
+        if (cur().sessionId) toast('已有对话的文件夹不能更改，新对话可以选'); else folderSheet();
+        return true;
+      case 'model':
+        if (!arg) { modelSheet(); return true; }
+        S.model = arg === 'default' || arg === '默认' ? '' : arg;
+        store.set('model', S.model);
+        note(`模型：<b>${esc(shortModel(S.model || S.defaultModel))}</b>${S.model ? '' : '（默认）'}，从下一条消息起生效`);
+        return true;
+      case 'effort': {
+        const level = arg.toLowerCase() in EFFORTS ? arg.toLowerCase() : EFFORT_ALIASES[arg];
+        if (!arg || level === undefined) {
+          note(`思考级别：<b>${S.effort ? EFFORTS[S.effort] + '（' + S.effort + '）' : '默认（跟随 Claude Code 设置）'}</b><br>可选：${Object.keys(EFFORTS).map(k => `<code>/effort ${k}</code>`).join(' ')} <code>/effort default</code>`);
+          return true;
+        }
+        S.effort = level;
+        store.set('effort', level);
+        note(`思考级别：<b>${level ? EFFORTS[level] + '（' + level + '）' : '默认（跟随 Claude Code 设置）'}</b>，从下一条消息起生效`);
+        return true;
+      }
+      default:
+        return false; // Claude Code's own command or skill
+    }
+  }
+
+  const menu = document.createElement('div');
+  menu.id = 'slashMenu';
+  menu.hidden = true;
+  document.querySelector('.composer').prepend(menu);
+  function hideMenu() { menu.hidden = true; }
+  function showMenu() {
+    const v = input.value;
+    const m = v.match(/^\/(\S*)$/);
+    if (!m) return hideMenu();
+    const q = m[1].toLowerCase();
+    const items = commandList().filter(c => c.name.toLowerCase().startsWith(q)).concat(
+      commandList().filter(c => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q))).slice(0, 40);
+    if (!items.length) return hideMenu();
+    menu.innerHTML = items.map(c => `<button class="cmd-item" data-cmd="${esc(c.name)}" data-args="${c.args ? 1 : ''}"><code>/${esc(c.name)}</code><span>${esc(c.desc)}</span></button>`).join('');
+    menu.hidden = false;
+  }
+  menu.addEventListener('mousedown', e => e.preventDefault());
+  menu.addEventListener('click', e => {
+    const b = e.target.closest('[data-cmd]');
+    if (!b) return;
+    input.value = '/' + b.dataset.cmd + (b.dataset.args ? ' ' : '');
+    input.focus();
+    autosize();
+    hideMenu();
+    updateChrome();
+    if (!b.dataset.args && LOCAL[b.dataset.cmd]) send();
+  });
+
   // ---------- images ----------
   function addImages(files) {
     const chat = cur();
     [...files].slice(0, 8).forEach(file => {
+      if (!/^image\/(png|jpe?g|gif|webp|bmp)$/.test(file.type)) return addFile(chat, file);
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
@@ -600,17 +770,30 @@
         g.drawImage(img, 0, 0, c.width, c.height);
         const dataUrl = c.toDataURL('image/jpeg', 0.86);
         URL.revokeObjectURL(url);
-        chat.images.push({ type: 'image/jpeg', data: dataUrl.split(',')[1], url: dataUrl });
+        chat.images.push({ kind: 'image', type: 'image/jpeg', data: dataUrl.split(',')[1], url: dataUrl });
         updateChrome();
       };
       img.onerror = () => { URL.revokeObjectURL(url); toast('这张图片读不了'); };
       img.src = url;
     });
   }
+  function addFile(chat, file) {
+    if (file.size > 25 * 1024 * 1024) return toast(`${file.name} 超过 25MB`);
+    const reader = new FileReader();
+    reader.onload = () => {
+      chat.images.push({ kind: 'file', name: file.name || 'file', size: file.size, data: String(reader.result).split(',')[1] || '' });
+      updateChrome();
+    };
+    reader.onerror = () => toast(`${file.name} 读不了`);
+    reader.readAsDataURL(file);
+  }
+  const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
   function renderAttachments() {
     const chat = cur();
     const box = $('attachments');
-    const html = chat.images.map((img, i) => `<div class="thumb"><img src="${img.url}" alt=""><button data-remove="${i}" aria-label="移除">${icon('x')}</button></div>`).join('');
+    const html = chat.images.map((a, i) => a.kind === 'file'
+      ? `<div class="thumb file">${icon('file')}<span class="fname">${esc(a.name)}</span><span class="fsize">${fmtSize(a.size)}</span><button data-remove="${i}" aria-label="移除">${icon('x')}</button></div>`
+      : `<div class="thumb"><img src="${a.url}" alt=""><button data-remove="${i}" aria-label="移除">${icon('x')}</button></div>`).join('');
     if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
   }
 
@@ -809,7 +992,7 @@
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.38) + 'px';
   }
-  input.addEventListener('input', () => { autosize(); updateChrome(); });
+  input.addEventListener('input', () => { autosize(); showMenu(); updateChrome(); });
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
   });

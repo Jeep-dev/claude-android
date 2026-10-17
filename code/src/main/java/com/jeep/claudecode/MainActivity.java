@@ -115,7 +115,7 @@ public final class MainActivity extends Activity {
                 fileCallback = callback;
                 Intent pick = new Intent(Intent.ACTION_GET_CONTENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("image/*")
+                        .setType("*/*")
                         .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 try {
                     startActivityForResult(pick, CHOOSE_IMAGES);
@@ -199,6 +199,8 @@ public final class MainActivity extends Activity {
             c.setReadTimeout(30000);
             c.setRequestMethod(method);
             c.setRequestProperty("X-Token", token);
+            // A fresh connection each time: a reused one the bridge has closed loses the answer.
+            c.setRequestProperty("Connection", "close");
             if (body != null) {
                 byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
                 c.setDoOutput(true);

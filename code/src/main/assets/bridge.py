@@ -8,6 +8,7 @@ only, and every request must carry the token the app started it with.
 Standard library only.
 """
 import argparse
+import base64
 import hmac
 import json
 import os
@@ -67,6 +68,7 @@ class Chat:
         self.session_id = None
         self.cwd = DEFAULT_CWD
         self.model = None
+        self.effort = None
         self.proc = None
         self.running = False
         self.used = time.time()
@@ -84,6 +86,10 @@ class Chat:
             args += ['--resume', self.session_id]
         if self.model:
             args += ['--model', self.model]
+        if self.effort:
+            # Through --settings: CLAUDE_CODE_EFFORT_LEVEL in the user's settings would otherwise
+            # override both --effort and /effort.
+            args += ['--settings', json.dumps({'env': {'CLAUDE_CODE_EFFORT_LEVEL': self.effort}})]
         os.makedirs(self.cwd, exist_ok=True)
         self.stderr = []
         self.proc = subprocess.Popen(args, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -121,16 +127,16 @@ class Chat:
             self.stderr.append(line.rstrip())
             del self.stderr[:-50]
 
-    def send(self, content, cwd=None, model=None, session_id=None):
+    def send(self, content, cwd=None, model=None, session_id=None, effort=None):
         with self.lock:
             if session_id and not self.session_id:
                 self.session_id = session_id
             if cwd and not self.alive():
                 self.cwd = cwd
-            if model != self.model:
-                self.model = model
+            if model != self.model or effort != self.effort:
+                self.model, self.effort = model, effort
                 if self.alive() and not self.running:
-                    self.close()
+                    self.close()  # restarts with the new model or effort, resuming the session
             if not self.alive():
                 self.start()
             self.running = True
@@ -178,6 +184,7 @@ class Chat:
 
 chats = {}
 chats_lock = threading.Lock()
+seen_messages = []  # ids of messages already sent: the app may repeat a request whose answer it lost
 
 
 def chat_for(key, session_id=None):
@@ -469,10 +476,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def post(self, path, data):
         if path == '/send':
+            mid = data.get('mid')
+            with chats_lock:
+                repeated = mid is not None and mid in seen_messages
+                if mid is not None and not repeated:
+                    seen_messages.append(mid)
+                    del seen_messages[:-200]
+            if repeated:
+                return self.reply(200, {'ok': True, 'repeated': True})
             chat = chat_for(data['chat'], data.get('sessionId'))
             try:
                 chat.send(data['content'], cwd=data.get('cwd'), model=data.get('model') or None,
-                          session_id=data.get('sessionId'))
+                          session_id=data.get('sessionId'), effort=data.get('effort') or None)
             except (OSError, ValueError) as e:
                 chat.running = False
                 return self.reply(500, {'error': str(e)})
@@ -487,6 +502,20 @@ class Handler(BaseHTTPRequestHandler):
                 os.remove(target)
                 shutil.rmtree(target[:-6], ignore_errors=True)
             self.reply(200, {'ok': bool(target)})
+        elif path == '/upload':
+            folder = os.path.expanduser(data.get('cwd') or DEFAULT_CWD)
+            name = os.path.basename(str(data.get('name') or 'file')).strip() or 'file'
+            os.makedirs(folder, exist_ok=True)
+            stem, ext = os.path.splitext(name)
+            target, n = os.path.join(folder, name), 1
+            while os.path.exists(target):  # never overwrite: name (1).ext, name (2).ext …
+                target, n = os.path.join(folder, '%s (%d)%s' % (stem, n, ext)), n + 1
+            try:
+                with open(target, 'wb') as f:
+                    f.write(base64.b64decode(data.get('data') or ''))
+            except (OSError, ValueError) as e:
+                return self.reply(400, {'error': str(e)})
+            self.reply(200, {'ok': True, 'path': target})
         elif path == '/mkdir':
             try:
                 os.makedirs(os.path.expanduser(data['path']), exist_ok=True)

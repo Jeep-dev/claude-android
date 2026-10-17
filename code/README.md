@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.1.0)
+# Claude Code for Android (v0.2.0)
 
 A phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon.
@@ -26,9 +26,25 @@ A phone interface for Claude Code running in Termux. Separate from the claude.ai
 
 Drawer with the conversation list (swipe right anywhere to open, left to close; long-press a
 conversation to delete it), floating composer where Enter makes a new line and the button
-sends, images from the system picker (scaled to 1568 px JPEG), working-folder and model
-pickers, thinking and tool steps collapsed into rows (Bash, file edits with a diff, to-do
-lists), code blocks with copy, token usage per reply, light and dark colours.
+sends, files from the system picker (pictures go to the model scaled to 1568 px JPEG; other
+files are saved into the working folder, never overwriting, and their paths added to the
+message), working-folder and model pickers, thinking and tool steps collapsed into rows (Bash,
+file edits with a diff, to-do lists), code blocks with copy, token usage per reply
+(↑ context, ↓ output, CH cache hits), light and dark colours.
+
+While Claude Code works, the status line shows elapsed time, API retries (attempt and error)
+and how long nothing has arrived once that passes 20 s. A send whose answer is lost is
+repeated with the same message id, which the bridge ignores the second time.
+
+## Slash commands
+
+Typing `/` lists commands. Handled by the app: `/help`, `/new` and `/clear` (new
+conversation), `/effort low|medium|high|xhigh|max|default`, `/model [name]`, `/folder`,
+`/stop`. Effort and model apply from the next message: the bridge restarts the idle process
+with `--model` and `--settings '{"env":{"CLAUDE_CODE_EFFORT_LEVEL":…}}'` and resumes the
+session (a `CLAUDE_CODE_EFFORT_LEVEL` in the user's settings would override `--effort` and
+Claude Code's own `/effort`). Everything else, such as `/compact`, `/context`, `/cost`,
+`/init` and skills, goes to Claude Code as typed.
 
 ## Setup on the phone
 

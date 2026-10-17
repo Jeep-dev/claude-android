@@ -24,7 +24,7 @@
   --font-serif: "Noto Serif", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
   --font-mono: "JetBrains Mono", "Roboto Mono", "Droid Sans Mono", "Noto Sans Mono", ui-monospace, monospace;
   --drawer-w: min(86vw, 320px);
-  --top-h: 56px;
+  --top-h: 46px;
   color-scheme: light;
 }
 
@@ -152,12 +152,10 @@ input, textarea { font: inherit; color: inherit; }
   content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px;
   background: linear-gradient(var(--bg), transparent); pointer-events: none;
 }
-.icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); flex: none; }
+.icon-btn { width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); flex: none; }
 .icon-btn:active { background: var(--hover); }
 .title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 0 6px; }
-#title { max-width: 100%; font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#subtitle { max-width: 100%; font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#subtitle:empty { display: none; }
+#title { max-width: 100%; font-weight: 600; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #banner {
   margin: 4px 12px 0; padding: 9px 12px; border-radius: 10px;
@@ -323,8 +321,7 @@ input, textarea { font: inherit; color: inherit; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
 .tool-body { margin: 6px 0 8px 32px; display: flex; flex-direction: column; gap: 8px; }
 .io { border-radius: 10px; background: var(--code-bg); border: 1px solid var(--border); overflow: hidden; }
-.io-label { padding: 6px 10px 0; font-size: 11.5px; color: var(--text-3); font-weight: 600; letter-spacing: 0.03em; }
-.io pre { margin: 0; padding: 6px 10px 9px; max-height: 320px; overflow: auto; font: 12.5px/1.55 var(--font-mono); white-space: pre-wrap; word-break: break-all; }
+.io pre { margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto; font: 12.5px/1.55 var(--font-mono); white-space: pre-wrap; word-break: break-all; }
 .io.err pre { color: var(--danger); }
 .diff pre { padding: 6px 0 9px; white-space: pre; }
 .diff .del, .diff .add, .diff .ctx { display: block; padding: 0 10px; }
@@ -349,12 +346,24 @@ input, textarea { font: inherit; color: inherit; }
 
 .status { display: flex; align-items: center; gap: 10px; min-height: 30px; color: var(--text-2); font-size: 14.5px; }
 .glyph { width: 20px; text-align: center; color: var(--accent); font-size: 19px; line-height: 1; font-family: var(--font-mono); }
-.status .elapsed { color: var(--text-3); font-size: 13px; }
+.status { flex-wrap: wrap; row-gap: 0; }
+.status .elapsed { color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.status .detail { flex-basis: 100%; padding-left: 30px; font-size: 12.5px; color: var(--text-3); }
+.status .detail:empty { display: none; }
+.status .detail.warn { color: #b26a12; }
+.io.cmd-in pre { color: var(--text-2); }
+.user-file { display: flex; align-items: center; gap: 8px; max-width: 86%; margin-bottom: 6px; padding: 8px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-size: 14px; }
+.user-file .ic { width: 17px; height: 17px; color: var(--text-2); flex: none; }
+.user-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumb.file { width: 150px; height: auto; min-height: 64px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.thumb.file .ic { width: 16px; height: 16px; color: var(--text-2); }
+.thumb.file .fname { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumb.file .fsize { font-size: 11px; color: var(--text-3); }
 
 .msg-foot { display: flex; align-items: center; gap: 4px; margin-top: 8px; color: var(--text-3); font-size: 12.5px; }
 .msg-foot .icon-btn { width: 32px; height: 32px; border-radius: 8px; color: var(--text-3); }
 .msg-foot .icon-btn .ic { width: 16px; height: 16px; }
-.msg-foot .usage { margin-left: 4px; }
+.msg-foot .usage { margin-left: 4px; font-family: var(--font-mono); font-size: 12px; }
 
 /* ---------- composer ---------- */
 .composer-wrap { flex: none; padding: 6px 10px calc(10px + env(safe-area-inset-bottom)); position: relative; z-index: 5; }
@@ -485,3 +494,25 @@ input, textarea { font: inherit; color: inherit; }
   .hljs-title, .hljs-section, .hljs-function .hljs-title { color: #8fbdf0; }
   .hljs-variable, .hljs-template-variable, .hljs-params { color: #c3c1b8; }
 }
+
+/* ---------- slash commands ---------- */
+#slashMenu {
+  max-height: min(42vh, 320px); overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 -4px 4px; padding: 2px 0 6px; border-bottom: 1px solid var(--border);
+}
+.cmd-item { width: 100%; display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; border-radius: 10px; text-align: left; }
+.cmd-item:active { background: var(--hover); }
+.cmd-item code { flex: none; font: 500 13.5px/1.4 var(--font-mono); color: var(--accent-press); }
+.cmd-item span { min-width: 0; font-size: 13.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.note {
+  margin: 0 auto 22px; max-width: 92%; padding: 10px 14px; border-radius: 14px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2); font-size: 14px; line-height: 1.6; text-align: center;
+}
+.note b { color: var(--text); font-weight: 600; }
+.note code { font: 12.5px/1.4 var(--font-mono); padding: 1px 5px; border-radius: 5px; background: var(--hover); color: var(--accent-press); white-space: nowrap; }
+.note:has(.note-row) { text-align: left; }
+.note-title { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.note-row { display: flex; gap: 10px; padding: 3px 0; align-items: baseline; }
+.note-row code { flex: none; }
