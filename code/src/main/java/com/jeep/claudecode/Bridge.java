@@ -40,7 +40,7 @@ final class Bridge {
     private static final int PORT = 8765;
     private static final String BASE = "http://127.0.0.1:" + PORT;
     /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
-    private static final int VERSION = 6;
+    private static final int VERSION = 7;
 
     interface Reply { void done(int status, JSONObject data); }
     interface Events { void events(List<JSONObject> batch); void link(boolean up); }

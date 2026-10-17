@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 6  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 7  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -398,66 +398,74 @@ def load_history(session_id):
     path = find_session(session_id)
     if not path:
         return None
-    messages, tools, cwd, custom = [], {}, None, None
+    messages, tools, cwd, custom, skipped = [], {}, None, None, 0
     with open(path, encoding='utf-8', errors='replace') as f:
         for line in f:
             try:
                 e = json.loads(line)
             except ValueError:
                 continue
-            kind = e.get('type')
-            if kind == 'custom-title' or e.get('customTitle'):
-                custom = e.get('customTitle') or custom
-            if e.get('isSidechain') or e.get('isMeta'):
+            if not isinstance(e, dict):
                 continue
-            cwd = e.get('cwd') or cwd
-            if kind == 'system' and e.get('subtype') == 'compact_boundary':
-                messages.append({'role': 'divider', 'text': '上下文已压缩'})
-                continue
-            msg = e.get('message') or {}
-            content = msg.get('content')
-            if kind == 'user':
-                if isinstance(content, str):
-                    content = [{'type': 'text', 'text': content}]
-                if not isinstance(content, list):
+            try:
+                kind = e.get('type')
+                if kind == 'custom-title' or e.get('customTitle'):
+                    custom = e.get('customTitle') or custom
+                if e.get('isSidechain') or e.get('isMeta'):
                     continue
-                text_parts, images = [], []
-                for b in content:
-                    if not isinstance(b, dict):
+                cwd = e.get('cwd') or cwd
+                if kind == 'system' and e.get('subtype') == 'compact_boundary':
+                    messages.append({'role': 'divider', 'text': '上下文已压缩'})
+                    continue
+                msg = e.get('message') or {}
+                content = msg.get('content')
+                if kind == 'user':
+                    if isinstance(content, str):
+                        content = [{'type': 'text', 'text': content}]
+                    if not isinstance(content, list):
                         continue
-                    if b.get('type') == 'tool_result':
-                        tool = tools.get(b.get('tool_use_id'))
-                        if tool is not None:
-                            tool['result'] = tool_result_text(b.get('content'))[:20000]
-                            tool['isError'] = bool(b.get('is_error'))
-                            tool['status'] = 'error' if tool['isError'] else 'done'
-                    elif b.get('type') == 'text' and is_prompt_text(b.get('text', '')):
-                        text_parts.append(b['text'])
-                    elif b.get('type') == 'image':
-                        src = b.get('source') or {}
-                        if src.get('type') == 'base64' and len(src.get('data', '')) < 1_500_000:
-                            images.append('data:%s;base64,%s' % (src.get('media_type', 'image/png'), src['data']))
-                        else:
-                            images.append(None)
-                if text_parts or images:
-                    messages.append({'role': 'user', 'text': '\n'.join(text_parts), 'images': images})
-            elif kind == 'assistant' and isinstance(content, list):
-                if not messages or messages[-1]['role'] != 'assistant':
-                    messages.append({'role': 'assistant', 'blocks': []})
-                blocks = messages[-1]['blocks']
-                for b in content:
-                    if not isinstance(b, dict):
-                        continue
-                    t = b.get('type')
-                    if t == 'text' and b.get('text', '').strip():
-                        blocks.append({'type': 'text', 'text': b['text']})
-                    elif t == 'thinking' and b.get('thinking', '').strip():
-                        blocks.append({'type': 'thinking', 'text': b['thinking']})
-                    elif t == 'tool_use':
-                        tool = {'type': 'tool', 'id': b.get('id'), 'name': b.get('name'),
-                                'input': b.get('input') or {}, 'status': 'done'}
-                        tools[b.get('id')] = tool
-                        blocks.append(tool)
+                    text_parts, images = [], []
+                    for b in content:
+                        if not isinstance(b, dict):
+                            continue
+                        if b.get('type') == 'tool_result':
+                            tool = tools.get(b.get('tool_use_id'))
+                            if tool is not None:
+                                tool['result'] = tool_result_text(b.get('content'))[:20000]
+                                tool['isError'] = bool(b.get('is_error'))
+                                tool['status'] = 'error' if tool['isError'] else 'done'
+                        elif b.get('type') == 'text' and is_prompt_text(b.get('text', '')):
+                            text_parts.append(b['text'])
+                        elif b.get('type') == 'image':
+                            src = b.get('source') or {}
+                            if src.get('type') == 'base64' and len(src.get('data', '')) < 1_500_000:
+                                images.append('data:%s;base64,%s' % (src.get('media_type', 'image/png'), src['data']))
+                            else:
+                                images.append(None)
+                    if text_parts or images:
+                        messages.append({'role': 'user', 'text': '\n'.join(text_parts), 'images': images})
+                elif kind == 'assistant' and isinstance(content, list):
+                    if not messages or messages[-1]['role'] != 'assistant':
+                        messages.append({'role': 'assistant', 'blocks': []})
+                    blocks = messages[-1]['blocks']
+                    for b in content:
+                        if not isinstance(b, dict):
+                            continue
+                        t = b.get('type')
+                        if t == 'text' and b.get('text', '').strip():
+                            blocks.append({'type': 'text', 'text': b['text']})
+                        elif t == 'thinking' and b.get('thinking', '').strip():
+                            blocks.append({'type': 'thinking', 'text': b['thinking']})
+                        elif t == 'tool_use':
+                            tool = {'type': 'tool', 'id': b.get('id'), 'name': b.get('name'),
+                                    'input': b.get('input') or {}, 'status': 'done'}
+                            tools[b.get('id')] = tool
+                            blocks.append(tool)
+            except Exception:  # an entry this bridge does not understand is left out
+                if not skipped:
+                    import traceback
+                    log('history %s: skipped an entry\n%s' % (session_id, traceback.format_exc()))
+                skipped += 1
     return {'id': session_id, 'cwd': cwd, 'title': custom, 'messages': messages}
 
 
@@ -508,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def reply(self, status, data):
-        body = json.dumps(data, ensure_ascii=False).encode()
+        body = json.dumps(data, ensure_ascii=False).encode('utf-8', 'replace')  # lone surrogates
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
@@ -526,6 +534,10 @@ class Handler(BaseHTTPRequestHandler):
             self.get()
         except ValueError as e:
             self.reply(400, {'error': str(e)})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            self.failed(e)
 
     def get(self):
         url = urlparse(self.path)
@@ -565,6 +577,19 @@ class Handler(BaseHTTPRequestHandler):
             self.post(urlparse(self.path).path, data)
         except (ValueError, KeyError, TypeError) as e:
             self.reply(400, {'error': 'bad request: %s' % e})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            self.failed(e)
+
+    def failed(self, e):
+        """An error the bridge did not expect: logged, and answered so the app can show it."""
+        import traceback
+        log('%s failed:\n%s' % (self.path.split('?')[0], traceback.format_exc()))
+        try:
+            self.reply(500, {'error': '%s: %s' % (type(e).__name__, e)})
+        except OSError:
+            pass
 
     def post(self, path, data):
         if path == '/send':
@@ -647,7 +672,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b': ping\n\n')
                 for e in batch:
                     since = e['seq']
-                    self.wfile.write(b'data: ' + json.dumps(e, ensure_ascii=False).encode() + b'\n\n')
+                    self.wfile.write(b'data: ' + json.dumps(e, ensure_ascii=False).encode('utf-8', 'replace') + b'\n\n')
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
