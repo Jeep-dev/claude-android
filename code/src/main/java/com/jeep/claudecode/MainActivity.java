@@ -205,11 +205,24 @@ public final class MainActivity extends Activity implements Bridge.Events {
         list.setPadding(dp(18), dp(6), dp(18), dp(24));
         list.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         list.setItemAnimator(null); // rows change in place; animated moves overlap neighbours
-        adapter = new ThreadAdapter(this, md, this::copy, () -> {
-            // A row opened or closed: the list stays where the reader is, growing downward.
-            stick = false;
+        adapter = new ThreadAdapter(this, md, this::copy, row -> {
+            // A row opened or closed. At the bottom the list keeps following the end; elsewhere it
+            // stays where the reader is, and an opened row hidden below is scrolled into view
+            // (its head staying on screen).
             renderNow();
-            list.post(() -> toBottom.setVisibility(list.canScrollVertically(1) ? View.VISIBLE : View.GONE));
+            if (stick) return;
+            list.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    list.getViewTreeObserver().removeOnPreDrawListener(this);
+                    if (row.getParent() == list) {
+                        int below = row.getBottom() - (list.getHeight() - list.getPaddingBottom());
+                        int dy = Math.min(below, row.getTop() - list.getPaddingTop());
+                        if (dy > 0) list.smoothScrollBy(0, dy);
+                    }
+                    toBottom.setVisibility(list.canScrollVertically(1) ? View.VISIBLE : View.GONE);
+                    return true;
+                }
+            });
         });
         list.setAdapter(adapter);
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {

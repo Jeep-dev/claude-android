@@ -55,13 +55,14 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
     private final Context c;
     private final Md md;
     private final Consumer<String> copy;
-    private final Runnable changed;
+    /** A row was opened or closed; gets the row's view. */
+    private final Consumer<View> changed;
     private List<Item> items = new ArrayList<>();
     private Chat chat;
     final List<Holder> statusRows = new ArrayList<>();
     private final LruCache<String, Bitmap> images = new LruCache<>(24);
 
-    ThreadAdapter(Context c, Md md, Consumer<String> copy, Runnable changed) {
+    ThreadAdapter(Context c, Md md, Consumer<String> copy, Consumer<View> changed) {
         this.c = c;
         this.md = md;
         this.copy = copy;
@@ -308,9 +309,9 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         return v;
     }
 
-    private void toggle(Chat.Block b) {
+    private void toggle(Chat.Block b, View row) {
         b.open = !b.open;
-        changed.run();
+        changed.accept(row);
     }
 
     private static String thinkingLabel(Chat.Block b) {
@@ -328,7 +329,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         t.setPadding(Ui.dp(c, 9), 0, 0, 0);
         head.addView(t, Ui.weight());
         head.addView(chevron(b.open));
-        head.setOnClickListener(v -> toggle(b));
+        head.setOnClickListener(v -> toggle(b, (View) v.getParent()));
         box.addView(head);
         if (!b.open) return;
         MaxScroll scroll = new MaxScroll(c, Ui.dp(c, 300));
@@ -415,7 +416,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         Ui.margins(state, c, 8, 0, 0, 0);
         head.addView(state);
         head.addView(chevron(b.open));
-        head.setOnClickListener(v -> toggle(b));
+        head.setOnClickListener(v -> toggle(b, (View) v.getParent()));
         box.addView(head);
         if ("TodoWrite".equals(b.name)) todos(box, b);
         if (!b.open) return;
