@@ -409,7 +409,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 }
                 break;
             }
-            case "Write": body.addView(io(b.name + "  " + i.optString("file_path"), i.optString("content"), R.color.text)); break;
+            case "Write": body.addView(io(b.name, i.optString("file_path") + "\n\n" + i.optString("content"), R.color.text)); break;
             case "TodoWrite": break;
             default: body.addView(io(b.name, pretty(i), R.color.text2));
         }
