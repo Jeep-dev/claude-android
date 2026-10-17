@@ -133,6 +133,10 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         Item item;
         // status row parts
         TextView glyph, verb, elapsed, detail;
+        // thinking row parts, updated in place while it streams
+        TextView thinkLabel, thinkBody;
+        MaxScroll thinkScroll;
+        boolean thinkOpen;
 
         Holder(LinearLayout box) {
             super(box);
@@ -148,11 +152,22 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
 
     @Override public void onBindViewHolder(@NonNull Holder h, int position) {
         Item it = items.get(position);
-        boolean same = h.item != null && h.item.id == it.id && it.type == TEXT;
+        boolean same = h.item != null && h.item.id == it.id && h.item.type == it.type;
         h.item = it;
-        if (same) { // the same reply text, grown: update its views in place
+        if (same && it.type == TEXT) { // the same reply text, grown: update its views in place
             h.box.setPadding(0, Ui.dp(c, it.gap), 0, 0);
             md.render(h.box, it.block.text);
+            return;
+        }
+        if (same && it.type == THINKING && h.thinkOpen == it.block.open) { // same: no rebuild, no jump
+            h.box.setPadding(0, Ui.dp(c, it.gap), 0, 0);
+            h.thinkLabel.setText(thinkingLabel(it.block));
+            if (h.thinkBody != null && !it.block.text.contentEquals(h.thinkBody.getText())) {
+                boolean atEnd = !h.thinkScroll.canScrollVertically(1);
+                h.thinkBody.setText(it.block.text);
+                MaxScroll scroll = h.thinkScroll;
+                if (it.block.streaming && atEnd) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+            }
             return;
         }
         h.box.removeAllViews();
@@ -164,7 +179,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             case NOTE: note(h.box, it.msg); break;
             case DIVIDER: divider(h.box, it.msg); break;
             case TEXT: md.render(h.box, it.block.text); break;
-            case THINKING: thinking(h.box, it.block); break;
+            case THINKING: thinking(h, it.block); break;
             case TOOL: tool(h.box, it.block); break;
             case ERROR: error(h.box, it.block); break;
             case STOPPED: h.box.addView(Ui.text(c, "已停止", 13.5f, R.color.text3)); break;
@@ -301,10 +316,18 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         changed.run();
     }
 
-    private void thinking(LinearLayout box, Chat.Block b) {
+    private static String thinkingLabel(Chat.Block b) {
+        return b.streaming ? "思考中…" : b.millis > 0 ? "已思考 " + Math.max(1, Math.round(b.millis / 1000f)) + " 秒" : "已思考";
+    }
+
+    private void thinking(Holder h, Chat.Block b) {
+        LinearLayout box = h.box;
         LinearLayout head = head(R.drawable.ic_brain, false);
-        String label = b.streaming ? "思考中…" : b.millis > 0 ? "已思考 " + Math.max(1, Math.round(b.millis / 1000f)) + " 秒" : "已思考";
-        TextView t = Ui.text(c, label, 14.5f, R.color.text2);
+        TextView t = Ui.text(c, thinkingLabel(b), 14.5f, R.color.text2);
+        h.thinkLabel = t;
+        h.thinkOpen = b.open;
+        h.thinkBody = null;
+        h.thinkScroll = null;
         t.setPadding(Ui.dp(c, 9), 0, 0, 0);
         head.addView(t, Ui.weight());
         head.addView(chevron(b.open));
@@ -316,6 +339,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         body.setLineSpacing(0, 1.35f);
         body.setTextIsSelectable(true);
         scroll.addView(body);
+        h.thinkBody = body;
+        h.thinkScroll = scroll;
         LinearLayout wrap = Ui.row(c);
         View bar = new View(c);
         bar.setBackgroundColor(Ui.color(c, R.color.border));

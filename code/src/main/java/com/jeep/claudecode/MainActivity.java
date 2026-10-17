@@ -211,12 +211,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(RecyclerView rv, int dx, int dy) {
                 if (rv.getScrollState() == RecyclerView.SCROLL_STATE_IDLE && dy == 0) return;
-                stick = !rv.canScrollVertically(1);
+                // Scrolling up by hand lets go of the bottom; a layout change at the bottom does not.
+                boolean byHand = rv.getScrollState() != RecyclerView.SCROLL_STATE_IDLE;
+                stick = !(byHand && dy < 0) && !rv.canScrollVertically(1);
                 toBottom.setVisibility(stick ? View.GONE : View.VISIBLE);
             }
         });
         list.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-            if (stick && b != ob) scrollToEnd(false);
+            if (stick && b != ob && list.getScrollState() != RecyclerView.SCROLL_STATE_DRAGGING) scrollToEnd(false);
         });
         content.addView(list, new FrameLayout.LayoutParams(-1, -1));
         emptyView = new ScrollView(this);
@@ -478,6 +480,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
         stick = true;
         toBottom.setVisibility(View.GONE);
         list.post(() -> {
+            // The reader may have taken the list meanwhile: never pull it back down.
+            if (!stick || list.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING) return;
             int count = adapter.getItemCount();
             if (count == 0) return;
             if (smooth) list.smoothScrollToPosition(count - 1);
