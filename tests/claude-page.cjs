@@ -41,7 +41,11 @@ class HTMLElement extends Element {}
 HTMLElement.prototype.focus = function () { document.activeElement = this; };
 
 const document = { listeners: { click: [], keydown: [], focusin: [], touchstart: [] },
-  addEventListener(t, h) { (this.listeners[t] ||= []).push(h); } };
+  addEventListener(t, h) { (this.listeners[t] ||= []).push(h); },
+  createElement: tag => ({ tag }), head: { appendChild(el) { document.styles.push(el); } }, styles: [],
+  documentElement: { classes: new Set(), classList: { toggle(c, on) {
+    on ? document.documentElement.classes.add(c) : document.documentElement.classes.delete(c); } } },
+  selection: { isCollapsed: true }, getSelection() { return this.selection; } };
 const body = new HTMLElement('body');
 const link = new HTMLElement('a', new HTMLElement('nav', body));
 const composer = new HTMLElement('div', body);
@@ -108,4 +112,14 @@ assert.equal(key({}), true, 'Send disabled: no new line');
 assert.equal(send.clicks, 3, 'Send disabled: nothing sent');
 send.attrs['aria-label'] = 'Stop response';
 assert.equal(key({}), false, 'no Send button (Claude replying): Enter is a new line');
+
+// Selecting text turns layer effects off for the page; ending the selection restores them.
+assert.ok(/backdrop-filter: none/.test(document.styles[0].textContent), 'flat style injected');
+const selectionChanged = () => document.listeners.selectionchange.forEach(h => h({}));
+document.selection = { isCollapsed: false };
+selectionChanged();
+assert.ok(document.documentElement.classes.has('claude-app-selecting'), 'selecting flattens');
+document.selection = { isCollapsed: true };
+selectionChanged();
+assert.ok(!document.documentElement.classes.has('claude-app-selecting'), 'selection end restores');
 console.log('claude-page: all tests passed');

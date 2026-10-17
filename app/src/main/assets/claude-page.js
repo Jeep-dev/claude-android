@@ -168,6 +168,23 @@
     }, true);
   }
 
+  // While text is selected, effects that make the page draw on separate GPU layers are off:
+  // masks, backdrop blur, content-visibility/containment, will-change and transitions.
+  // Selecting text in the WebView paints parts of the page black; this tests whether one of
+  // these causes it. The page looks the same once the selection ends.
+  const SELECTING = 'claude-app-selecting';
+  const flat = document.createElement('style');
+  flat.textContent = `html.${SELECTING} *, html.${SELECTING} *::before, html.${SELECTING} *::after {
+    -webkit-mask-image: none !important; mask-image: none !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    content-visibility: visible !important; contain: none !important;
+    will-change: auto !important; transition: none !important; }`;
+  (document.head || document.documentElement).appendChild(flat);
+  document.addEventListener('selectionchange', () => {
+    const selection = document.getSelection();
+    document.documentElement.classList.toggle(SELECTING, !!selection && !selection.isCollapsed);
+  });
+
   // The status bar takes Claude's background colour, so it follows the Claude theme setting.
   const bar = window.ClaudeStatusBar;
   if (bar && window.getComputedStyle && window.MutationObserver) {
