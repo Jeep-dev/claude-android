@@ -168,6 +168,76 @@
     }, true);
   }
 
+  // Selecting text in the WebView draws the backgrounds Claude writes as CSS color(srgb …)
+  // (main panel, header, sidebars) black; rgb() backgrounds stay correct. From page load on,
+  // each such background is shown as the identical rgb() colour instead, so nothing changes
+  // on screen or during a selection. Elements are rechecked when they appear or change class,
+  // and all of them when Claude changes theme.
+  if (window.getComputedStyle && window.MutationObserver && document.body) {
+    const SRGB = /^color\(srgb\s+([\d.e+-]+)\s+([\d.e+-]+)\s+([\d.e+-]+)(?:\s*\/\s*([\d.e+-]+%?))?\s*\)$/;
+    const toRgb = color => {
+      const m = SRGB.exec(color || '');
+      if (!m) return null;
+      const channel = v => Math.round(Math.min(1, Math.max(0, parseFloat(v))) * 255);
+      let alpha = m[4] == null ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+      alpha = Math.min(1, Math.max(0, alpha));
+      const rgb = channel(m[1]) + ', ' + channel(m[2]) + ', ' + channel(m[3]);
+      return alpha === 1 ? 'rgb(' + rgb + ')' : 'rgba(' + rgb + ', ' + alpha + ')';
+    };
+    const pinned = new Map(); // element -> the page's own inline background-color, priority
+    const unpin = el => {
+      const own = pinned.get(el);
+      if (!own) return;
+      pinned.delete(el);
+      if (own[0]) el.style.setProperty('background-color', own[0], own[1]);
+      else el.style.removeProperty('background-color');
+    };
+    const pin = el => {
+      unpin(el);
+      if (!el.style) return;
+      const rgb = toRgb(getComputedStyle(el).backgroundColor);
+      if (!rgb) return;
+      pinned.set(el, [el.style.getPropertyValue('background-color'),
+        el.style.getPropertyPriority('background-color')]);
+      el.style.setProperty('background-color', rgb, 'important');
+    };
+    const queue = new Set();
+    let frame = 0;
+    const later = window.requestAnimationFrame || (fn => setTimeout(fn, 16));
+    const run = () => {
+      frame = 0;
+      const items = [...queue];
+      queue.clear();
+      for (const { el, deep } of items) {
+        if (!el.isConnected) { pinned.delete(el); continue; }
+        pin(el);
+        if (deep) for (const child of el.querySelectorAll('*')) pin(child);
+      }
+    };
+    const check = (el, deep) => {
+      queue.add({ el, deep });
+      if (!frame) frame = later(run);
+    };
+    const all = () => {
+      for (const el of [...pinned.keys()]) unpin(el);
+      check(document.documentElement, true);
+    };
+    new MutationObserver(records => {
+      for (const r of records) {
+        if (r.type === 'childList') {
+          for (const node of r.addedNodes) if (node.nodeType === 1) check(node, true);
+        } else if (r.target === document.documentElement || r.target === document.body) {
+          return all(); // theme switch
+        } else {
+          check(r.target, false);
+        }
+      }
+    }).observe(document.documentElement,
+      { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-mode', 'data-theme'] });
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', all);
+    all();
+  }
+
   // The status bar takes Claude's background colour, so it follows the Claude theme setting.
   const bar = window.ClaudeStatusBar;
   if (bar && window.getComputedStyle && window.MutationObserver) {
