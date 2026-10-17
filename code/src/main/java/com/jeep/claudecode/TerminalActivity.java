@@ -3,7 +3,6 @@ package com.jeep.claudecode;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -52,7 +51,8 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
         }
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(Ui.color(this, R.color.bg));
+        applyColors();
         view = new TerminalView(this, null);
         view.setTerminalViewClient(this);
         view.setTextSize(Ui.dp(this, textSizeDp)); // makes the renderer (monospace): before anything else on the view
@@ -78,14 +78,37 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
             typeInput();
         }
         view.attachSession(session);
+        if (session.getEmulator() != null) session.getEmulator().mColors.reset(); // a shell from before: new colours
         view.requestFocus();
     }
+
+    /**
+     * The app's own colours: its background and text, and in the light theme ANSI colours dark
+     * enough to read on it (the standard ones are made for a black screen).
+     */
+    private void applyColors() {
+        java.util.Properties p = new java.util.Properties();
+        p.put("background", hex(Ui.color(this, R.color.bg)));
+        p.put("foreground", hex(Ui.color(this, R.color.text)));
+        p.put("cursor", hex(Ui.color(this, R.color.accent)));
+        boolean night = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        String[] ansi = night
+                ? new String[]{"#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
+                        "#666666", "#f14c4c", "#23d18b", "#f5f543", "#3b8eea", "#d670d6", "#29b8db", "#ffffff"}
+                : new String[]{"#1f1e1d", "#c4261d", "#1e7a34", "#946200", "#1f56c7", "#a2349f", "#0e7584", "#6b6a66",
+                        "#5c5b57", "#d93a2f", "#2a9145", "#a87400", "#3567d9", "#b842b4", "#148a9b", "#3d3c39"};
+        for (int i = 0; i < ansi.length; i++) p.put("color" + i, ansi[i]);
+        com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(p);
+    }
+
+    private static String hex(int color) { return String.format("#%06x", color & 0xFFFFFF); }
 
     /** ESC, TAB, CTRL, ALT, arrows and the symbols phone keyboards hide. */
     private View keys() {
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
-        scroll.setBackgroundColor(0xFF1C1C1C);
+        scroll.setBackgroundColor(Ui.color(this, R.color.surface2));
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         key(row, "ESC", () -> view.handleKeyCode(KeyEvent.KEYCODE_ESCAPE, 0));
@@ -105,7 +128,7 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
     private TextView key(LinearLayout row, String label, Runnable action) {
         TextView k = new TextView(this);
         k.setText(label);
-        k.setTextColor(Color.WHITE);
+        k.setTextColor(Ui.color(this, R.color.text));
         k.setTextSize(14);
         k.setTypeface(Typeface.MONOSPACE);
         k.setGravity(Gravity.CENTER);
@@ -117,8 +140,9 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
     }
 
     private void paint() {
-        ctrlKey.setTextColor(ctrl ? 0xFFD97757 : Color.WHITE);
-        altKey.setTextColor(alt ? 0xFFD97757 : Color.WHITE);
+        int on = Ui.color(this, R.color.accent), off = Ui.color(this, R.color.text);
+        ctrlKey.setTextColor(ctrl ? on : off);
+        altKey.setTextColor(alt ? on : off);
     }
 
     private void type(int codePoint) {
