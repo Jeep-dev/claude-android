@@ -40,7 +40,7 @@ final class Bridge {
     private static final int PORT = 8765;
     private static final String BASE = "http://127.0.0.1:" + PORT;
     /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
 
     interface Reply { void done(int status, JSONObject data); }
     interface Events { void events(List<JSONObject> batch); void link(boolean up); }
@@ -55,6 +55,8 @@ final class Bridge {
     private volatile long lastSeq = -1;
     private final List<JSONObject> pending = new ArrayList<>();
     private boolean flushQueued;
+    /** When this app last asked Termux to start the bridge: a start still under way is not repeated. */
+    private volatile long startedAt;
 
     Bridge(Context context, Events listener) {
         this.context = context.getApplicationContext();
@@ -147,9 +149,10 @@ final class Bridge {
     void connect(boolean restart, java.util.function.Consumer<String> done) {
         pool.execute(() -> {
             String result;
-            if (!restart && isCurrent(exchange("GET", "/health", null))) result = "ok";
+            if (!restart && isUp()) result = "ok";
             else if (!hasTermux()) result = "termux";
             else if (!hasPermission()) result = "permission";
+            else if (System.currentTimeMillis() - startedAt < 15_000) result = waitUntilUp();
             else if (!run()) result = "start";
             else result = waitUntilUp();
             if ("ok".equals(result) && !reading) {
@@ -168,6 +171,17 @@ final class Bridge {
         } catch (JSONException e) {
             return false;
         }
+    }
+
+    /** Whether the bridge answers; three tries, so a busy bridge is not taken for a dead one. */
+    private boolean isUp() {
+        for (int i = 0; i < 3; i++) {
+            Object[] health = exchange("GET", "/health", null);
+            if (isCurrent(health)) return true;
+            if ((int) health[0] == 200) return false; // another version: replace it
+            try { Thread.sleep(500); } catch (InterruptedException e) { return false; }
+        }
+        return false;
     }
 
     /** Waits at most 12 s for the bridge just started. */
@@ -189,6 +203,7 @@ final class Bridge {
             return false;
         }
         lastSeq = -1;
+        startedAt = System.currentTimeMillis();
         Intent intent = new Intent()
                 .setClassName(TERMUX, "com.termux.app.RunCommandService")
                 .setAction("com.termux.RUN_COMMAND")

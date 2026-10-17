@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.3.8)
+# Claude Code for Android (v0.3.9)
 
 A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -9,12 +9,14 @@ interface is plain Android views (Java), so scrolling and text selection are the
 - `assets/bridge.py` runs in Termux (standard-library Python). The app starts it in the
   background through Termux's `RUN_COMMAND` service, passing the script and a random
   per-install token. It listens on `127.0.0.1:8765` only and rejects requests without the
-  token. A newly started bridge replaces one already running; the app also replaces a running
+  token. A newly started bridge replaces one already running (a lock held for the bridge's life
+  leaves only the newest when several start at once); the app also replaces a running
   bridge of another version. Requests to the bridge never go through a proxy (a VPN app's
   proxy could hold them); a health check times out after 3 s and a newly started bridge has
   12 s to answer, after which the app shows the setup steps. Tapping the connection status
   while connecting restarts the bridge. When the link stays down for 2 s with the app open, the
-  app checks the bridge and starts it again if it is gone; turns the old bridge was running are
+  app checks the bridge (three tries, so a busy one is not taken for dead) and starts it again
+  if it is gone, never twice within 15 s; turns the old bridge was running are
   marked interrupted (a new message continues the conversation). The bridge logs its starts,
   stops and crashes to `~/.ccapp/bridge.log` (a start with no stop before the next means it was
   killed).

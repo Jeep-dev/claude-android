@@ -22,12 +22,13 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 5  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 6  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
 STATE_DIR = os.path.join(HOME, '.ccapp')
 PID_FILE = os.path.join(STATE_DIR, 'bridge.pid')
+LOCK_FILE = os.path.join(STATE_DIR, 'bridge.lock')
 DEFAULT_CWD = os.path.join(HOME, 'work')
 LOG_FILE = os.path.join(STATE_DIR, 'bridge.log')
 LAUNCH_FILE = os.path.join(STATE_DIR, 'launch.json')
@@ -652,18 +653,50 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
 
-def replace_running_bridge():
-    os.makedirs(STATE_DIR, exist_ok=True)
+def running_bridge():
     try:
         with open(PID_FILE) as f:
-            old = int(f.read().strip())
-        if old != os.getpid():
+            pid = int(f.read().strip())
+        return pid if pid != os.getpid() else None
+    except (OSError, ValueError):
+        return None
+
+
+_lock = None
+
+
+def replace_running_bridge():
+    """Leaves exactly one bridge, the newest: it stops the one running and takes the lock that
+    bridge held for its life, so two started at once end with one."""
+    import fcntl
+    global _lock
+    os.makedirs(STATE_DIR, exist_ok=True)
+    _lock = open(LOCK_FILE, 'a')
+    deadline = time.time() + 12
+    while True:
+        old = running_bridge()
+        if old:
+            try:
+                os.kill(old, signal.SIGTERM)
+            except OSError:
+                pass
+        try:
+            fcntl.flock(_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.time() > deadline:
+                log('exit pid %d: another bridge keeps the lock' % os.getpid())
+                sys.exit(1)
+            time.sleep(0.2)
+    old = running_bridge()  # a bridge from before the lock
+    if old:
+        try:
             os.kill(old, signal.SIGTERM)
             for _ in range(30):
                 time.sleep(0.1)
                 os.kill(old, 0)
-    except (OSError, ValueError):
-        pass
+        except OSError:
+            pass
     with open(PID_FILE, 'w') as f:
         f.write(str(os.getpid()))
 
@@ -692,9 +725,23 @@ def main():
     wake(True)
 
     def shutdown(signum, _frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         log('stop pid %d: signal %d' % (os.getpid(), signum))
-        for chat in list(chats.values()):
-            chat.close()
+        procs = [chat.proc for chat in list(chats.values()) if chat.proc is not None]
+        for proc in procs:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+        end = time.time() + 3
+        for proc in procs:
+            try:
+                proc.wait(max(0.1, end - time.time()))
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except OSError:
+                    pass
         os._exit(0)
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
@@ -714,6 +761,7 @@ def main():
         except OSError:
             time.sleep(0.1)
     if server is None:
+        log('exit pid %d: port %d busy' % (os.getpid(), args.port))
         sys.exit('port %d busy' % args.port)
     server.daemon_threads = True
     server.token = args.token

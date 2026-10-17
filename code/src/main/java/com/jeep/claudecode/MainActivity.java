@@ -748,11 +748,19 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
         if (chat.title.isEmpty()) chat.title = titleText;
         switchTo(chat);
-        if (chat.loaded) return;
-        chat.loaded = true;
-        Chat target = chat;
-        bridge.get("/history?id=" + Uri.encode(id), (status, data) -> {
-            if (status != 200) { toast("读取对话失败"); return; }
+        loadHistory(chat);
+    }
+
+    /** Reads a saved conversation once; a failed read is tried again on the next link or tap. */
+    private void loadHistory(Chat target) {
+        if (target.loaded || target.sessionId == null || !linked) return;
+        target.loaded = true;
+        bridge.get("/history?id=" + Uri.encode(target.sessionId), (status, data) -> {
+            if (status != 200) {
+                target.loaded = false;
+                toast(status == -1 ? "读取对话失败：桥接没有响应" : "读取对话失败：" + data.optString("error", "HTTP " + status));
+                return;
+            }
             target.load(data);
             if (!data.optString("cwd").isEmpty()) target.cwd = data.optString("cwd");
             if (current == target) { adapter.show(target, true); stick = true; renderNow(); }
@@ -916,6 +924,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
         renderNow();
         loadSessions();
+        loadHistory(current);
     }
 
     private void updateLink() {
