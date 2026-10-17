@@ -53,6 +53,8 @@ public final class MainActivity extends Activity {
     private static final String PYTHON = "/data/data/com.termux/files/usr/bin/python3";
     private static final String TERMUX_HOME = "/data/data/com.termux/files/home";
     private static final int PORT = 8765;
+    /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
+    private static final int BRIDGE_VERSION = 2;
     private static final String BASE = "http://127.0.0.1:" + PORT;
     private static final String PAGE = "https://appassets.androidplatform.net/assets/web/index.html";
     private static final int CHOOSE_IMAGES = 1;
@@ -367,7 +369,7 @@ public final class MainActivity extends Activity {
 
     private String connectBridge() {
         Object[] r = exchange("GET", "/health", null);
-        if ((int) r[0] == 200) return "ok";
+        if ((int) r[0] == 200 && currentBridge((String) r[1])) return "ok";
         if (!hasTermux()) return "termux";
         if (!hasRunPermission()) return "permission";
         if (!runBridge()) return "start";
@@ -377,7 +379,8 @@ public final class MainActivity extends Activity {
     private String waitForBridge() {
         for (int i = 0; i < 40; i++) {
             try { Thread.sleep(250); } catch (InterruptedException e) { return "timeout"; }
-            if ((int) exchange("GET", "/health", null)[0] == 200) {
+            Object[] r = exchange("GET", "/health", null);
+            if ((int) r[0] == 200 && currentBridge((String) r[1])) {
                 if (!eventsRunning) {
                     eventsRunning = true;
                     http.execute(this::readEvents);
@@ -386,6 +389,14 @@ public final class MainActivity extends Activity {
             }
         }
         return "timeout";
+    }
+
+    private static boolean currentBridge(String health) {
+        try {
+            return new JSONObject(health).optInt("version") == BRIDGE_VERSION;
+        } catch (org.json.JSONException e) {
+            return false;
+        }
     }
 
     @Override protected void onDestroy() {
