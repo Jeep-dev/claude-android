@@ -345,30 +345,32 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             case "WebFetch": return new String[]{"globe", name, i.optString("url")};
             case "WebSearch": return new String[]{"globe", name, i.optString("query")};
             case "Task": case "Agent": return new String[]{"spark", name, i.optString("description")};
-            case "TodoWrite": return new String[]{"list", "Todo", "更新待办"};
+            case "TodoWrite": return new String[]{"list", "TodoWrite", "Update Todos"};
             case "Skill": return new String[]{"spark", name, i.optString("skill", i.optString("command"))};
             default: return new String[]{"tool", name, ""};
         }
     }
 
+    private static int iconRes(String name) {
+        switch (name) {
+            case "terminal": return R.drawable.ic_terminal;
+            case "file": return R.drawable.ic_file;
+            case "filePlus": return R.drawable.ic_file_plus;
+            case "pencil": return R.drawable.ic_pencil;
+            case "search": return R.drawable.ic_search;
+            case "globe": return R.drawable.ic_globe;
+            case "spark": return R.drawable.ic_spark;
+            case "list": return R.drawable.ic_list;
+            default: return R.drawable.ic_tool;
+        }
+    }
+
     private void tool(LinearLayout box, Chat.Block b) {
         String[] info = toolInfo(b);
-        // As in Claude Code's terminal: the tool's name in a box, then a summary of the step.
-        LinearLayout head = Ui.row(c);
-        head.setMinimumHeight(Ui.dp(c, 36));
-        head.setPadding(Ui.dp(c, 6), Ui.dp(c, 4), Ui.dp(c, 8), Ui.dp(c, 4));
-        head.setBackground(Ui.press(c, null, Ui.dp(c, 10)));
-        LinearLayout.LayoutParams lp = Ui.fill();
-        lp.leftMargin = -Ui.dp(c, 6);
-        head.setLayoutParams(lp);
-        TextView name = Ui.text(c, info[1], 12, b.error ? R.color.danger : R.color.text);
-        name.setTypeface(Typeface.create(Ui.MONO, Typeface.BOLD));
-        name.setGravity(Gravity.CENTER);
-        name.setPadding(Ui.dp(c, 7), Ui.dp(c, 4), Ui.dp(c, 7), Ui.dp(c, 4));
-        name.setBackground(Ui.round(Ui.color(c, R.color.surface), Ui.dp(c, 7), Ui.dp(c, 1),
-                Ui.color(c, b.error ? R.color.danger : R.color.border)));
-        head.addView(name);
-        TextView detail = Ui.text(c, info[2], 14, R.color.text2);
+        // The row shows what the step does; opened, the tool's name heads the command, as in
+        // Claude Code's terminal.
+        LinearLayout head = head(iconRes(info[0]), true);
+        TextView detail = Ui.text(c, info[2], 14.5f, R.color.text);
         detail.setSingleLine(true);
         detail.setEllipsize(TextUtils.TruncateAt.END);
         detail.setPadding(Ui.dp(c, 9), 0, 0, 0);
@@ -392,9 +394,14 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         LinearLayout body = Ui.column(c);
         JSONObject i = b.input;
         switch (b.name == null ? "" : b.name) {
-            case "Bash": body.addView(io("$ " + i.optString("command"), R.color.text2)); break;
-            case "Edit": body.addView(diff(i.optString("old_string"), i.optString("new_string"))); break;
+            case "Bash": body.addView(io(b.name, i.optString("command"), R.color.text)); break;
+            case "Read": body.addView(io(b.name, i.optString("file_path"), R.color.text)); break;
+            case "Edit":
+                body.addView(io(b.name, i.optString("file_path"), R.color.text));
+                body.addView(diff(i.optString("old_string"), i.optString("new_string")));
+                break;
             case "MultiEdit": {
+                body.addView(io(b.name, i.optString("file_path"), R.color.text));
                 JSONArray edits = i.optJSONArray("edits");
                 for (int k = 0; edits != null && k < edits.length(); k++) {
                     JSONObject e = edits.optJSONObject(k);
@@ -402,11 +409,11 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 }
                 break;
             }
-            case "Write": body.addView(io(i.optString("content"), R.color.text)); break;
-            case "Read": case "TodoWrite": break;
-            default: body.addView(io(pretty(i), R.color.text2));
+            case "Write": body.addView(io(b.name + "  " + i.optString("file_path"), i.optString("content"), R.color.text)); break;
+            case "TodoWrite": break;
+            default: body.addView(io(b.name, pretty(i), R.color.text2));
         }
-        if (b.result != null && !b.result.isEmpty()) body.addView(io(b.result, b.error ? R.color.danger : R.color.text));
+        if (b.result != null && !b.result.isEmpty()) body.addView(io(null, b.result, b.error ? R.color.danger : R.color.text2));
         for (int k = 1; k < body.getChildCount(); k++) Ui.margins(body.getChildAt(k), c, 0, 8, 0, 0);
         box.addView(body, Ui.fill());
         Ui.margins(body, c, 32, 6, 0, 8);
@@ -416,8 +423,17 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         try { return o.toString(2); } catch (Exception e) { return o.toString(); }
     }
 
-    private View io(String text, int colorRes) {
-        String s = text == null ? "" : text.length() > 8000 ? text.substring(0, 8000) + "\n…" : text;
+    /** A box of monospace text, headed by the tool's name when given. */
+    private View io(String label, String text, int colorRes) {
+        String body = text == null ? "" : text.length() > 8000 ? text.substring(0, 8000) + "\n…" : text;
+        SpannableStringBuilder s = new SpannableStringBuilder();
+        if (label != null) {
+            s.append(label);
+            s.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 0, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            s.setSpan(new ForegroundColorSpan(Ui.color(c, R.color.accentPress)), 0, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (!body.isEmpty()) s.append('\n');
+        }
+        s.append(body);
         MaxScroll scroll = new MaxScroll(c, Ui.dp(c, 320));
         scroll.setBackground(Ui.round(Ui.color(c, R.color.codeBg), Ui.dp(c, 10), Ui.dp(c, 1), Ui.color(c, R.color.border)));
         TextView t = Ui.text(c, s, 12.5f, colorRes);
