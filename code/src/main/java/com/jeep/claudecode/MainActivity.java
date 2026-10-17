@@ -486,20 +486,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
         title.setText(current.title.isEmpty() ? "新对话" : current.title);
         boolean typed = input.getText().toString().trim().length() > 0 || !current.attachments.isEmpty();
         boolean canSend = linked && typed;
-        if (current.running && !typed) {
-            sendBtn.setImageResource(R.drawable.ic_stop);
-            sendBtn.setImageTintList(android.content.res.ColorStateList.valueOf(col(R.color.bg)));
-            sendBtn.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(18)), dp(18)));
-            sendBtn.setAlpha(1f);
-            sendBtn.setEnabled(true);
-        } else {
-            sendBtn.setImageResource(R.drawable.ic_arrow_up);
-            sendBtn.setImageTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
-            sendBtn.setBackground(Ui.press(this, Ui.round(col(R.color.accent), dp(18)), dp(18)));
-            sendBtn.setAlpha(canSend ? 1f : 0.35f);
-            sendBtn.setEnabled(canSend);
-        }
-        sendBtn.setPadding(dp(7), dp(7), dp(7), dp(7));
+        // Plain icons, no filled button: Enter to send, a ringed square to stop the reply.
+        boolean stop = current.running && !typed;
+        sendBtn.setImageResource(stop ? R.drawable.ic_stop_circle : R.drawable.ic_enter);
+        sendBtn.setImageTintList(android.content.res.ColorStateList.valueOf(col(R.color.text)));
+        sendBtn.setBackground(Ui.press(this, null, dp(18)));
+        sendBtn.setAlpha(stop || canSend ? 1f : 0.35f);
+        sendBtn.setEnabled(stop || canSend);
+        sendBtn.setPadding(dp(6), dp(6), dp(6), dp(6));
         renderAttachments();
     }
 
