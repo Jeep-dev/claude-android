@@ -1502,6 +1502,28 @@ public final class MainActivity extends Activity implements Bridge.Events {
         Ui.margins(termux, this, 8, 0, 0, 0);
         box.addView(actions, Ui.fill());
         Ui.margins(actions, this, 0, 10, 0, 0);
+        section(box, "后台保活");
+        LinearLayout keep = card(sheet);
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        boolean exempt = pm.isIgnoringBatteryOptimizations(getPackageName());
+        option(keep, R.drawable.ic_termux_app, "Termux 应用设置", "在“耗电管理”里打开“允许后台行为”和“允许自启动”", false, () -> {
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + Bridge.TERMUX)));
+            } catch (RuntimeException e) {
+                toast("打不开 Termux 的应用设置");
+            }
+        });
+        option(keep, R.drawable.ic_check, exempt ? "本 App 已不受电池优化" : "让本 App 不受电池优化", null, false, () -> {
+            if (exempt) return;
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
+            } catch (RuntimeException e) {
+                toast("系统不支持这个设置");
+            }
+        });
+        String rish = "rish -c 'dumpsys deviceidle whitelist +com.termux; dumpsys deviceidle whitelist +" + getPackageName()
+                + "; cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow; cmd appops set com.termux RUN_IN_BACKGROUND allow'";
+        option(keep, R.drawable.ic_copy, "复制 rish 白名单命令", "在 Termux 里运行一次，把 Termux 和本 App 加进系统省电白名单", false, () -> copy(rish));
         section(box, "说明");
         LinearLayout info = card(sheet);
         kv(info, "权限模式", "不询问（bypass）");

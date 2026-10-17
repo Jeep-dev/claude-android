@@ -21,7 +21,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 2  # MainActivity.BRIDGE_VERSION: an app update replaces an older running bridge
+VERSION = 3  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -202,6 +202,25 @@ def chat_for(key, session_id=None):
                     return chat
         chats[key] = Chat(key)
         return chats[key]
+
+
+_awake = False
+
+
+def wake(on):
+    """Termux's wake lock, held as long as the bridge runs: in the background it stays alive.
+    Termux asks once to be exempted from battery optimization when it is first taken."""
+    global _awake
+    if on == _awake:
+        return
+    command = shutil.which('termux-wake-lock' if on else 'termux-wake-unlock')
+    if command:
+        try:
+            subprocess.Popen([command], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            _awake = on
+        except OSError:
+            pass
 
 
 def reaper():
@@ -574,10 +593,12 @@ def main():
     args = parser.parse_args()
     replace_running_bridge()
     os.makedirs(DEFAULT_CWD, exist_ok=True)
+    wake(True)
 
     def shutdown(*_):
         for chat in list(chats.values()):
             chat.close()
+        wake(False)
         os._exit(0)
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
