@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.3.6)
+# Claude Code for Android (v0.3.7)
 
 A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -13,9 +13,13 @@ interface is plain Android views (Java), so scrolling and text selection are the
   bridge of another version. Requests to the bridge never go through a proxy (a VPN app's
   proxy could hold them); a health check times out after 3 s and a newly started bridge has
   12 s to answer, after which the app shows the setup steps. Tapping the connection status
-  while connecting restarts the bridge.
-- The bridge holds Termux's wake lock (`termux-wake-lock`) for as long as it runs; Termux asks
-  once to be left out of battery optimization.
+  while connecting restarts the bridge. When the link stays down for 2 s with the app open, the
+  app checks the bridge and starts it again if it is gone; turns the old bridge was running are
+  marked interrupted (a new message continues the conversation). The bridge logs its starts,
+  stops and crashes to `~/.ccapp/bridge.log` (a start with no stop before the next means it was
+  killed).
+- The bridge takes Termux's wake lock (`termux-wake-lock`) when it starts and never releases it;
+  Termux asks once to be left out of battery optimization.
   Settings → 后台保活 opens Termux's app settings (ColorOS: allow background activity and
   auto-start), asks to leave this app out of battery optimization, and copies a `rish` command
   that adds both apps to the system's idle whitelist and allows Termux to run in the

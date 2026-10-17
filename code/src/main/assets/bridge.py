@@ -21,13 +21,15 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 3  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 4  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
 STATE_DIR = os.path.join(HOME, '.ccapp')
 PID_FILE = os.path.join(STATE_DIR, 'bridge.pid')
 DEFAULT_CWD = os.path.join(HOME, 'work')
+LOG_FILE = os.path.join(STATE_DIR, 'bridge.log')
+STARTED = time.time()  # tells the app a new bridge took over (turns of the old one are gone)
 IDLE_SECONDS = 15 * 60  # an idle conversation's process is stopped; it resumes on the next message
 
 
@@ -208,8 +210,9 @@ _awake = False
 
 
 def wake(on):
-    """Termux's wake lock, held as long as the bridge runs: in the background it stays alive.
-    Termux asks once to be exempted from battery optimization when it is first taken."""
+    """Termux's wake lock, taken when the bridge starts and never released (a replaced bridge
+    releasing it could undo its successor's). Termux asks once to be left out of battery
+    optimization when it is first taken."""
     global _awake
     if on == _awake:
         return
@@ -468,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         if url.path == '/health':
-            self.reply(200, {'ok': True, 'version': VERSION, 'home': HOME, 'defaultCwd': DEFAULT_CWD,
+            self.reply(200, {'ok': True, 'version': VERSION, 'started': STARTED, 'home': HOME, 'defaultCwd': DEFAULT_CWD,
                              'claude': shutil.which('claude')})
         elif url.path == '/events':
             self.events(int(q.get('since') or 0))
@@ -586,22 +589,43 @@ def replace_running_bridge():
         f.write(str(os.getpid()))
 
 
+def log(text):
+    try:
+        if os.path.getsize(LOG_FILE) > 200_000:
+            os.replace(LOG_FILE, LOG_FILE + '.1')
+    except OSError:
+        pass
+    try:
+        with open(LOG_FILE, 'a') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S ') + text + '\n')
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', required=True)
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
     replace_running_bridge()
+    log('start pid %d version %d' % (os.getpid(), VERSION))
     os.makedirs(DEFAULT_CWD, exist_ok=True)
     wake(True)
 
-    def shutdown(*_):
+    def shutdown(signum, _frame):
+        log('stop pid %d: signal %d' % (os.getpid(), signum))
         for chat in list(chats.values()):
             chat.close()
-        wake(False)
         os._exit(0)
     signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
+    def crashed(kind, value, tb):
+        import traceback
+        log('crash pid %d:\n%s' % (os.getpid(), ''.join(traceback.format_exception(kind, value, tb))))
+    sys.excepthook = crashed
+    threading.excepthook = lambda a: crashed(a.exc_type, a.exc_value, a.exc_traceback)
 
     server = None
     for _ in range(50):

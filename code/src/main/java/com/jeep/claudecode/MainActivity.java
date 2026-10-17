@@ -77,7 +77,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private Md md;
 
     // state
-    private boolean linked, everLinked, connecting;
+    private boolean linked, everLinked, connecting, resumed;
+    /** When the bridge in use started; another value means a new bridge and lost turns. */
+    private double bridgeStarted;
     private String setup; // why the bridge cannot be reached, or null
     private String home = "", defaultCwd = "", cwd, model, effort, defaultModel = "";
     private final List<String> models = new ArrayList<>();
@@ -136,8 +138,19 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
         if (!linked && !connecting && setup == null) connect(false);
     }
+
+    @Override protected void onPause() {
+        super.onPause();
+        resumed = false;
+    }
+
+    /** The link stayed down: start the bridge again if it is gone (only in the foreground, where Termux can be started). */
+    private final Runnable recover = () -> {
+        if (!linked && !connecting && resumed) connect(false);
+    };
 
     @Override protected void onDestroy() {
         ui.removeCallbacks(ticker);
@@ -847,6 +860,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
             linked = false;
             updateLink();
             render();
+            ui.removeCallbacks(recover);
+            ui.postDelayed(recover, 2000);
         }
     }
 
@@ -878,6 +893,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
         setup = null;
         bridge.get("/health", (status, data) -> {
             if (status != 200) return;
+            double started = data.optDouble("started", 0);
+            if (bridgeStarted != 0 && started != bridgeStarted) {
+                // A new bridge: the old one's turns ended with it.
+                for (Chat ch : chats.values()) {
+                    if (ch.running) fail(ch, "Termux 里的桥接重启了", "这一轮被中断，发消息即可接着这个对话继续。");
+                }
+            }
+            bridgeStarted = started;
             home = data.optString("home");
             defaultCwd = data.optString("defaultCwd");
             for (Chat ch : chats.values()) if (ch.cwd == null || ch.cwd.isEmpty()) ch.cwd = cwd.isEmpty() ? defaultCwd : cwd;
@@ -922,7 +945,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
             updateChrome();
             return;
         }
-        if (!linked) { toast("还没连上 Termux"); return; }
+        if (!linked) {
+            toast("正在重连 Termux，稍后再发");
+            if (!connecting) connect(false);
+            return;
+        }
         List<Chat.Attachment> attached = new ArrayList<>(chat.attachments);
         chat.attachments.clear();
         Chat.Msg user = new Chat.Msg(Chat.Msg.USER);
