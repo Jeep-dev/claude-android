@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.3.3)
+# Claude Code for Android (v0.3.4)
 
 A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -26,8 +26,8 @@ interface is plain Android views (Java), so scrolling and text selection are the
 ## Interface
 
 Drawer with the conversation list (swipe right anywhere to open, left to close; long-press a
-conversation to delete it), floating composer where Enter makes a new line and the button
-sends, files from the system picker (pictures go to the model scaled to 1568 px JPEG; other
+conversation to delete it), floating composer where the keyboard's Enter (a Send key) or the button sends and the
+keyboard then closes (Shift+Enter on a physical keyboard makes a new line), files from the system picker (pictures go to the model scaled to 1568 px JPEG; other
 files are saved into the working folder, never overwriting, and their paths added to the
 message), working-folder and model pickers, thinking (opened, it scrolls inside a box of at
 most 300 dp) and tool steps collapsed into rows as in Claude Code's terminal

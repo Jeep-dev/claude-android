@@ -265,8 +265,25 @@ public final class MainActivity extends Activity implements Bridge.Events {
         input.setPadding(dp(8), dp(8), dp(8), dp(6));
         input.setMinHeight(dp(40));
         input.setMaxHeight((int) (getResources().getDisplayMetrics().heightPixels * 0.34f));
+        // The keyboard's Enter sends (its key shows Send); the text still wraps over several lines.
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        input.setImeOptions(EditorInfo.IME_FLAG_NO_ENTER_ACTION);
+        input.setRawInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEND);
+        input.setHorizontallyScrolling(false);
+        input.setMaxLines(Integer.MAX_VALUE);
+        input.setOnEditorActionListener((v, action, event) -> {
+            if (action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_NULL) {
+                if (event == null || event.getAction() == android.view.KeyEvent.ACTION_DOWN) send();
+                return true;
+            }
+            return false;
+        });
+        // A physical Enter sends too; Shift+Enter makes a new line.
+        input.setOnKeyListener((v, code, event) -> {
+            if (code != android.view.KeyEvent.KEYCODE_ENTER || event.isShiftPressed()) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) send();
+            return true;
+        });
         input.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
@@ -921,6 +938,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         chat.detail = "";
         input.setText("");
         hideMenu();
+        hideKeyboard();
         stick = true;
         renderNow();
         upload(chat, attached, 0, new ArrayList<>(), text);
@@ -1482,7 +1500,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         section(box, "说明");
         LinearLayout info = card(sheet);
         kv(info, "权限模式", "不询问（bypass）");
-        kv(info, "换行 / 发送", "回车换行，按钮发送");
+        kv(info, "发送", "键盘回车或按钮，发完收起键盘");
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { /* none */ }
         kv(info, "版本", version);
