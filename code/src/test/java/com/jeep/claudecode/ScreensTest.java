@@ -125,8 +125,11 @@ public class ScreensTest {
         String md = "文件夹里有 **2 个文件**：\\n\\n| 文件 | 大小 |\\n|---|---|\\n| notes.txt | 210 B |\\n| pelican-bike.html | 1.8 KB |\\n\\n统计行数的脚本已经写好，保存为 `count.py`：\\n\\n```python\\nimport sys\\n\\nfor path in sys.argv[1:]:\\n    with open(path) as f:\\n        print(path, sum(1 for _ in f))\\n```\\n\\n运行：`python count.py *.txt`。";
         evs.add(ev(k, "cc", se("{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + md + "\"}}")));
         a.events(evs);
+        chat.queue.add(new Chat.Queued("顺便把 notes.txt 也统计一下", new ArrayList<>()));
+        call(a, "renderNow");
         idle();
         shot(root, "03-running");
+        chat.queue.clear();
 
         List<JSONObject> end = new ArrayList<>();
         end.add(ev(k, "cc", "{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"s1\",\"usage\":{\"output_tokens\":406}}"));

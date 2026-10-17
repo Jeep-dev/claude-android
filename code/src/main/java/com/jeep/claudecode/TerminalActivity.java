@@ -104,6 +104,19 @@ public final class TerminalActivity extends Activity implements TerminalSessionC
 
     private static String hex(int color) { return String.format("#%06x", color & 0xFFFFFF); }
 
+    /**
+     * Back (the button or the system's swipe) leaves the screen, the shell staying; the terminal
+     * view would otherwise take it as a key. Ending a text selection comes first.
+     */
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        if (e.getKeyCode() != KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(e);
+        if (e.getAction() == KeyEvent.ACTION_UP && !e.isCanceled()) {
+            if (view != null && view.isSelectingText()) view.stopTextSelectionMode();
+            else finish();
+        }
+        return true;
+    }
+
     /** ESC, TAB, CTRL, ALT, arrows and the symbols phone keyboards hide. */
     private View keys() {
         HorizontalScrollView scroll = new HorizontalScrollView(this);

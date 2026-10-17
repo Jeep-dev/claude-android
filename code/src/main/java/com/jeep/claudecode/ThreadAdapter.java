@@ -36,7 +36,10 @@ import org.json.JSONObject;
 /** The conversation as a list: one row per user message, note, reply block, status and footer. */
 final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
     static final int USER = 0, NOTE = 1, DIVIDER = 2, TEXT = 3, THINKING = 4, TOOL = 5, ERROR = 6,
-            STOPPED = 7, STATUS = 8, FOOTER = 9;
+            STOPPED = 7, STATUS = 8, FOOTER = 9, QUEUED = 10;
+
+    /** What the queued messages' buttons do. */
+    interface Queue { void edit(Chat.Queued q); void cancel(Chat.Queued q); void sendNow(Chat.Queued q); }
     static final String[] GLYPHS = {"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"};
 
     static final class Item {
@@ -46,6 +49,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         final Chat.Msg msg;
         final Chat.Block block;
         final int gap;
+        Chat.Queued queued;
 
         Item(int type, long id, long sig, Chat.Msg msg, Chat.Block block, int gap) {
             this.type = type; this.id = id; this.sig = sig; this.msg = msg; this.block = block; this.gap = gap;
@@ -57,6 +61,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
     private final Consumer<String> copy;
     /** A row was opened or closed; gets the row's view. */
     private final Consumer<View> changed;
+    Queue queue;
     private List<Item> items = new ArrayList<>();
     private Chat chat;
     final List<Holder> statusRows = new ArrayList<>();
@@ -126,6 +131,11 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         if (chat.running && (msgs.isEmpty() || msgs.get(msgs.size() - 1).kind != Chat.Msg.ASSISTANT)) {
             out.add(new Item(STATUS, -1, 0, null, null, 20));
         }
+        for (Chat.Queued q : chat.queue) {
+            Item it = new Item(QUEUED, -q.id - 1_000_000_000L, q.now ? 1 : 0, null, null, out.isEmpty() ? 6 : 18);
+            it.queued = q;
+            out.add(it);
+        }
         return out;
     }
 
@@ -189,6 +199,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             case STOPPED: h.box.addView(Ui.text(c, "已停止", 13.5f, R.color.text3)); break;
             case STATUS: status(h); break;
             case FOOTER: footer(h.box, it.msg); break;
+            case QUEUED: queued(h.box, it.queued); break;
             default:
         }
     }
@@ -244,6 +255,39 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             bubble.setTextIsSelectable(true);
             box.addView(bubble, Ui.wrap());
         }
+    }
+
+    /** A message waiting for the turn to end: its text, dimmed, and edit, cancel and send-now. */
+    private void queued(LinearLayout box, Chat.Queued q) {
+        box.setGravity(Gravity.END);
+        int max = (int) (c.getResources().getDisplayMetrics().widthPixels * 0.78f);
+        StringBuilder text = new StringBuilder(q.text);
+        for (Chat.Attachment a : q.attachments) text.append(text.length() > 0 ? "\n" : "").append(a.image ? "[图片] " : "[文件] ").append(a.name);
+        TextView bubble = Ui.text(c, text, 16, R.color.text2);
+        bubble.setIncludeFontPadding(true);
+        bubble.setLineSpacing(0, 1.15f);
+        bubble.setMaxWidth(max);
+        bubble.setPadding(Ui.dp(c, 15), Ui.dp(c, 10), Ui.dp(c, 15), Ui.dp(c, 10));
+        bubble.setBackground(Ui.round(0, Ui.dp(c, 20), Ui.dp(c, 1), Ui.color(c, R.color.borderStrong)));
+        box.addView(bubble, Ui.wrap());
+        LinearLayout row = Ui.row(c);
+        row.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        if (q.now) {
+            row.addView(Ui.text(c, "停止当前回复后发送…", 13, R.color.text3));
+        } else {
+            ImageView edit = Ui.iconButton(c, R.drawable.ic_pencil, 34, 17, R.color.text3);
+            edit.setOnClickListener(v -> { if (queue != null) queue.edit(q); });
+            row.addView(edit, new LinearLayout.LayoutParams(Ui.dp(c, 34), Ui.dp(c, 34)));
+            ImageView cancel = Ui.iconButton(c, R.drawable.ic_x, 34, 17, R.color.text3);
+            cancel.setOnClickListener(v -> { if (queue != null) queue.cancel(q); });
+            row.addView(cancel, new LinearLayout.LayoutParams(Ui.dp(c, 34), Ui.dp(c, 34)));
+            TextView now = Ui.text(c, "立即发送", 13.5f, R.color.text2);
+            now.setPadding(Ui.dp(c, 10), Ui.dp(c, 7), Ui.dp(c, 4), Ui.dp(c, 7));
+            now.setOnClickListener(v -> { if (queue != null) queue.sendNow(q); });
+            row.addView(now);
+        }
+        box.addView(row, Ui.wrap());
+        Ui.margins(row, c, 0, 4, 0, 0);
     }
 
     private Bitmap decode(String dataUrl) {

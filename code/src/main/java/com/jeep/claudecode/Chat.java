@@ -58,6 +58,10 @@ final class Chat {
     String sessionId, title = "", cwd = "", model;
     final List<Msg> messages = new ArrayList<>();
     boolean running, stopping, loaded = true;
+    /** The last turn ended because it was stopped: queued messages then wait to be sent by hand. */
+    boolean stopped;
+    /** Messages written while a turn runs, sent one by one when it ends. */
+    final List<Queued> queue = new ArrayList<>();
     long startedAt, lastEvent;
     String verb = VERBS[0], detail = "";
     JSONObject lastUsage;
@@ -73,6 +77,16 @@ final class Chat {
         Attachment(boolean image, String name, String type, String data, long size, android.graphics.Bitmap thumb) {
             this.image = image; this.name = name; this.type = type; this.data = data; this.size = size; this.thumb = thumb;
         }
+    }
+
+    static final class Queued {
+        final long id = IDS.getAndIncrement();
+        final String text;
+        final List<Attachment> attachments;
+        /** Sent as soon as the turn being stopped for it has ended. */
+        boolean now;
+
+        Queued(String text, List<Attachment> attachments) { this.text = text; this.attachments = attachments; }
     }
 
     Chat(String key) { this.key = key; }
@@ -302,6 +316,7 @@ final class Chat {
             m.done = true;
             m.touch();
             running = false;
+            stopped = stopping || "error_during_execution".equals(sub);
             stopping = false;
             if (d.has("session_id")) sessionId = d.optString("session_id");
             return true;

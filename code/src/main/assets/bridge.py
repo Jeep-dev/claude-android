@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 13  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 14  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -32,6 +32,7 @@ LOCK_FILE = os.path.join(STATE_DIR, 'bridge.lock')
 DEFAULT_CWD = os.path.join(HOME, 'work')
 LOG_FILE = os.path.join(STATE_DIR, 'bridge.log')
 LAUNCH_FILE = os.path.join(STATE_DIR, 'launch.json')
+MCP_FILE = os.path.join(STATE_DIR, 'mcp.json')  # MCP servers added in the app's settings
 PERMISSION_MODES = ('bypassPermissions', 'acceptEdits', 'plan', 'default')
 STARTED = time.time()  # tells the app a new bridge took over (turns of the old one are gone)
 IDLE_SECONDS = 15 * 60  # an idle conversation's process is stopped; it resumes on the next message
@@ -66,11 +67,13 @@ hub = Hub()
 
 class Launch:
     """How Claude Code is started, set in the app: permission mode, text appended to the system
-    prompt and extra arguments. A change restarts idle conversations on their next message."""
+    prompt, extra arguments, tools left out, and the MCP servers in MCP_FILE. A change (posting
+    to /launch, even nothing) restarts idle conversations on their next message."""
 
     def __init__(self):
         self.gen = 0
-        self.data = {'permissionMode': 'bypassPermissions', 'appendSystemPrompt': '', 'extraArgs': ''}
+        self.data = {'permissionMode': 'bypassPermissions', 'appendSystemPrompt': '', 'extraArgs': '',
+                     'disallowedTools': ''}
         try:
             with open(LAUNCH_FILE, encoding='utf-8') as f:
                 self.data.update(json.load(f))
@@ -79,7 +82,7 @@ class Launch:
 
     def set(self, data):
         new = dict(self.data)
-        for key in ('permissionMode', 'appendSystemPrompt', 'extraArgs'):
+        for key in ('permissionMode', 'appendSystemPrompt', 'extraArgs', 'disallowedTools'):
             if key in data:
                 new[key] = str(data[key] or '')
         if new['permissionMode'] not in PERMISSION_MODES:
@@ -95,6 +98,15 @@ class Launch:
         args = ['--permission-mode', self.data['permissionMode']]
         if self.data['appendSystemPrompt'].strip():
             args += ['--append-system-prompt', self.data['appendSystemPrompt']]
+        tools = self.data.get('disallowedTools', '').replace(',', ' ').split()
+        if tools:
+            args += ['--disallowedTools', ','.join(tools)]
+        try:
+            with open(MCP_FILE, encoding='utf-8') as f:
+                if json.load(f).get('mcpServers'):
+                    args += ['--mcp-config', MCP_FILE]
+        except (OSError, ValueError, AttributeError):
+            pass
         args += [os.path.expanduser(a) for a in shlex.split(self.data['extraArgs'])]
         return args
 

@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.4.3)
+# Claude Code for Android (v0.4.4)
 
 Claude Code on the phone in one app, no Termux needed. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -34,14 +34,20 @@ interface is plain Android views (Java), so scrolling and text selection are the
   and `~/work` that Termux put in `Download/ccapp`, moving Termux's home paths to `/root` so old
   conversations resume. The `rish` command in Settings whitelists the app and turns off
   Android's limit on child processes.
-- Settings: the state and Claude Code's version on top with 终端, 重启 and 运行日志; then 模型服务
-  (API 设置, Claude 订阅登录, which opens the terminal running `claude`), Claude Code's launch
-  options, permissions and keeping it running, and 从 Termux 导入.
-- Settings → 终端 opens a terminal in the userland (`bash -l` as root in `/root`), built on
+- Settings is a full-screen page: the state and Claude Code's version with 重启 and 运行日志;
+  模型服务 (API 设置, Claude 订阅登录, which opens the terminal running `claude`); 对话 (the
+  working folder for new conversations); Claude Code's launch options; 扩展: skills
+  (`~/.claude/skills/<name>/SKILL.md`, made, edited and deleted here), tools (switched off
+  with `--disallowedTools`; the list is the one Claude Code reported when a conversation last
+  started) and MCP servers (kept in `~/.ccapp/mcp.json` and passed with `--mcp-config`; pasting
+  a README's JSON adds them; servers added with `claude mcp add` are listed with their state);
+  permissions and keeping it running; and 从 Termux 导入.
+- The top bar's terminal button opens a terminal in the userland (`bash -l` as root in `/root`), built on
   Termux's terminal emulator and view (Apache 2.0): for commands, `apk add`, and interactive
   programs such as vim or `claude` itself (its `/login` for a Claude subscription). A row of
   keys gives ESC, TAB, CTRL, ALT, arrows, common symbols and paste; pinch changes the text
-  size. It takes the app's colours (light or dark), with ANSI colours readable on them. The shell lives on while the app does (leaving the screen keeps it; `exit` ends it).
+  size. It takes the app's colours (light or dark), with ANSI colours readable on them. Back
+  (button or swipe) leaves it; the shell lives on while the app does (`exit` ends it).
 - Each conversation is a `claude -p --input-format stream-json --output-format stream-json`
   process (bypass-permissions mode unless changed in Settings → 启动命令, which also sets text
   for `--append-system-prompt` and extra arguments, kept in `~/.ccapp/launch.json`, and edits
@@ -60,10 +66,10 @@ interface is plain Android views (Java), so scrolling and text selection are the
 ## Interface
 
 Drawer with the conversation list (swipe right anywhere to open, left to close; long-press a
-conversation to delete it), floating composer where the keyboard's Enter (a Send key) or the button sends and the
+conversation to pin it on top or delete it), a one-line composer (+, the text, send) where the keyboard's Enter (a Send key) or the button sends and the
 keyboard then closes (Shift+Enter on a physical keyboard makes a new line), files from the system picker (pictures go to the model scaled to 1568 px JPEG; other
 files are saved into the working folder, never overwriting, and their paths added to the
-message), working-folder and model pickers (the models in Claude Code's settings and any model name typed there, remembered; none built in), thinking (opened, it scrolls inside a box of at
+message), `/model` to pick a model (the models in Claude Code's settings and any model name typed there, remembered; none built in), thinking (opened, it scrolls inside a box of at
 most 300 dp) and tool steps collapsed into rows as in Claude Code's terminal
 (the tool's name in a box, then the step's summary or file; opened, the full command; file edits with a diff, to-do lists), selectable text, code
 blocks with copy, token usage per reply (↑ context, ↓ output, CH cache hits), light and dark
@@ -71,7 +77,9 @@ colours.
 
 While Claude Code works, the status line shows elapsed time, API retries (attempt and error)
 and how long nothing has arrived once that passes 20 s. A send whose answer is lost is
-repeated with the same message id, which the bridge ignores the second time.
+repeated with the same message id, which the bridge ignores the second time. A message sent
+while a reply runs is queued under it (edit, cancel, or 立即发送, which stops the reply and sends
+it); queued messages go one by one as replies end, and wait after a reply stopped by hand.
 
 ## Slash commands
 
