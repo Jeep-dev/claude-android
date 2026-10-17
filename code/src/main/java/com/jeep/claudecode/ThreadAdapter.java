@@ -566,7 +566,10 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         h.glyph = Ui.text(c, GLYPHS[0], 19, R.color.accent);
         h.glyph.setTypeface(Ui.MONO);
         h.glyph.setGravity(Gravity.CENTER);
-        row.addView(h.glyph, new LinearLayout.LayoutParams(Ui.dp(c, 20), -2));
+        h.glyph.setIncludeFontPadding(false);
+        // A fixed box: the glyphs come from fonts of different heights, and a row changing height
+        // every frame shakes the whole list while it keeps the bottom in view.
+        row.addView(h.glyph, new LinearLayout.LayoutParams(Ui.dp(c, 20), Ui.dp(c, 24)));
         h.verb = Ui.text(c, "", 14.5f, R.color.text2);
         h.verb.setPadding(Ui.dp(c, 10), 0, Ui.dp(c, 10), 0);
         row.addView(h.verb);
