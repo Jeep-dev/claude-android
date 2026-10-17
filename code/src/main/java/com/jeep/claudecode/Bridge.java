@@ -40,7 +40,7 @@ final class Bridge {
     private static final int PORT = 8765;
     private static final String BASE = "http://127.0.0.1:" + PORT;
     /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
-    private static final int VERSION = 7;
+    private static final int VERSION = 8;
 
     interface Reply { void done(int status, JSONObject data); }
     interface Events { void events(List<JSONObject> batch); void link(boolean up); }
@@ -105,7 +105,7 @@ final class Bridge {
         });
     }
 
-    /** One HTTP exchange; status -1 when the bridge cannot be reached. */
+    /** One HTTP exchange; status -1 when the bridge cannot be reached, -2 when it does not answer in time. */
     private Object[] exchange(String method, String path, String body) {
         HttpURLConnection c = null;
         try {
@@ -127,6 +127,8 @@ final class Bridge {
             int status = c.getResponseCode();
             InputStream in = status >= 400 ? c.getErrorStream() : c.getInputStream();
             return new Object[]{status, in == null ? "" : read(in)};
+        } catch (java.net.SocketTimeoutException e) {
+            return new Object[]{-2, ""};
         } catch (IOException e) {
             return new Object[]{-1, ""};
         } finally {
@@ -149,11 +151,12 @@ final class Bridge {
     void connect(boolean restart, java.util.function.Consumer<String> done) {
         pool.execute(() -> {
             String result;
-            if (!restart && isUp()) result = "ok";
+            String why = restart ? "restart asked in the app" : isUp();
+            if (why == null) result = "ok";
             else if (!hasTermux()) result = "termux";
             else if (!hasPermission()) result = "permission";
             else if (System.currentTimeMillis() - startedAt < 15_000) result = waitUntilUp();
-            else if (!run()) result = "start";
+            else if (!run(why)) result = "start";
             else result = waitUntilUp();
             if ("ok".equals(result) && !reading) {
                 reading = true;
@@ -173,15 +176,22 @@ final class Bridge {
         }
     }
 
-    /** Whether the bridge answers; three tries, so a busy bridge is not taken for a dead one. */
-    private boolean isUp() {
+    /**
+     * Null when the bridge answers, else why it is to be started (for its log); three tries, so a
+     * busy bridge is not taken for a dead one.
+     */
+    private String isUp() {
+        int status = 0;
         for (int i = 0; i < 3; i++) {
             Object[] health = exchange("GET", "/health", null);
-            if (isCurrent(health)) return true;
-            if ((int) health[0] == 200) return false; // another version: replace it
-            try { Thread.sleep(500); } catch (InterruptedException e) { return false; }
+            if (isCurrent(health)) return null;
+            status = (int) health[0];
+            if (status == 200) return "another version was running";
+            if (status == 401) return "a bridge with another token was running";
+            try { Thread.sleep(500); } catch (InterruptedException e) { return "interrupted"; }
         }
-        return false;
+        return status == -2 ? "the running bridge did not answer within 3 s, three times"
+                : status == -1 ? "no bridge was running" : "the running bridge answered " + status;
     }
 
     /** Waits at most 12 s for the bridge just started. */
@@ -195,7 +205,7 @@ final class Bridge {
     }
 
     /** Starts the bridge in Termux in the background; it replaces one already running. */
-    private boolean run() {
+    private boolean run(String why) {
         String script;
         try {
             script = read(context.getAssets().open("bridge.py"));
@@ -209,7 +219,7 @@ final class Bridge {
                 .setAction("com.termux.RUN_COMMAND")
                 .putExtra("com.termux.RUN_COMMAND_PATH", PYTHON)
                 .putExtra("com.termux.RUN_COMMAND_ARGUMENTS",
-                        new String[]{"-c", script, "--token", token, "--port", String.valueOf(PORT)})
+                        new String[]{"-c", script, "--token", token, "--port", String.valueOf(PORT), "--reason", "app: " + why})
                 .putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
                 .putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
                 .putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", "Claude Code bridge");

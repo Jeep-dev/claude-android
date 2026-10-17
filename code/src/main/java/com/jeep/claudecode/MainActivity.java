@@ -758,7 +758,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         bridge.get("/history?id=" + Uri.encode(target.sessionId), (status, data) -> {
             if (status != 200) {
                 target.loaded = false;
-                toast(status == -1 ? "读取对话失败：桥接没有响应" : "读取对话失败：" + data.optString("error", "HTTP " + status));
+                toast(status == -2 ? "读取对话失败：桥接 30 秒没有回应" : status == -1 ? "读取对话失败：连不上桥接" : "读取对话失败：" + data.optString("error", "HTTP " + status));
                 return;
             }
             target.load(data);
@@ -1026,12 +1026,12 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private void sendWithRetry(Chat chat, JSONObject body, long sentAt, int attempt) {
         bridge.post("/send", body, (status, data) -> {
             if (status == 200) return;
-            if (status == -1 && attempt < 2) {
+            if (status < 0 && attempt < 2) {
                 ui.postDelayed(() -> sendWithRetry(chat, body, sentAt, attempt + 1), 1200);
                 return;
             }
             if (chat.lastEvent > sentAt) return; // it is running after all
-            fail(chat, "发送失败", status == -1 ? "连不上 Termux 里的桥接程序。" : data.optString("error", String.valueOf(status)));
+            fail(chat, "发送失败", status == -2 ? "Termux 里的桥接程序没有回应。" : status == -1 ? "连不上 Termux 里的桥接程序。" : data.optString("error", String.valueOf(status)));
         });
     }
 

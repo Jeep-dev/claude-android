@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 7  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 8  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -129,6 +129,8 @@ class Chat:
         self.lock = threading.Lock()
         self.stopping = None
         self.launch_gen = None
+        self.last_out = time.time()
+        self.quiet_logged = False
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
@@ -152,6 +154,11 @@ class Chat:
                                      stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace',
                                      bufsize=1, start_new_session=True)
         proc = self.proc
+        self.last_out = time.time()
+        self.quiet_logged = False
+        log('chat %s: claude pid %d started, %s, model %s, effort %s, folder %s' % (
+            self.key[:8], proc.pid, 'resuming ' + self.session_id if self.session_id else 'new session',
+            self.model or 'default', self.effort or 'default', self.cwd))
         threading.Thread(target=self.read_out, args=(proc,), daemon=True).start()
         threading.Thread(target=self.read_err, args=(proc,), daemon=True).start()
 
@@ -164,13 +171,34 @@ class Chat:
                 msg = json.loads(line)
             except ValueError:
                 continue
+            self.last_out = time.time()
+            if self.quiet_logged:
+                log('chat %s: output again' % self.key[:8])
+                self.quiet_logged = False
             if msg.get('session_id'):
                 self.session_id = msg['session_id']
-            if msg.get('type') == 'result':
+            kind, sub = msg.get('type'), msg.get('subtype')
+            if kind == 'system' and sub == 'api_retry':
+                log('chat %s: API retry %s/%s in %sms: %s %s' % (
+                    self.key[:8], msg.get('attempt'), msg.get('max_retries'), msg.get('retry_delay_ms'),
+                    msg.get('error_status') or '', msg.get('error') or ''))
+            elif kind == 'result':
                 self.running = False
                 self.used = time.time()
+                log('chat %s: turn ended (%s%s), %.1fs, API %.1fs, %s turns' % (
+                    self.key[:8], sub, ', error' if msg.get('is_error') else '',
+                    (msg.get('duration_ms') or 0) / 1000, (msg.get('duration_api_ms') or 0) / 1000,
+                    msg.get('num_turns')))
+                if msg.get('is_error') and msg.get('result'):
+                    log('chat %s: %s' % (self.key[:8], str(msg.get('result'))[:500]))
+            elif kind == 'assistant':
+                err = msg.get('error')
+                if err:
+                    log('chat %s: assistant error %s' % (self.key[:8], err))
             hub.emit(self.key, 'cc', msg)
         code = proc.wait()
+        log('chat %s: claude pid %d exited with %s%s' % (
+            self.key[:8], proc.pid, code, ', stderr:\n  ' + '\n  '.join(self.stderr[-12:]) if self.stderr else ''))
         if proc is self.proc:
             was_running = self.running
             self.running = False
@@ -197,6 +225,12 @@ class Chat:
                 self.start()
             self.running = True
             self.used = time.time()
+            self.last_out = time.time()
+            if isinstance(content, list):
+                kinds = [b.get('type') for b in content if isinstance(b, dict)]
+                log('chat %s: message sent (%d text, %d image)' % (self.key[:8], kinds.count('text'), kinds.count('image')))
+            else:
+                log('chat %s: message sent' % self.key[:8])
             line = json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}}, ensure_ascii=False)
             self.proc.stdin.write(line + '\n')
             self.proc.stdin.flush()
@@ -206,6 +240,7 @@ class Chat:
         with self.lock:
             if not self.alive() or not self.running:
                 return
+            log('chat %s: stop requested' % self.key[:8])
             request = {'type': 'control_request', 'request_id': 'stop-%d' % time.time(),
                        'request': {'subtype': 'interrupt'}}
             try:
@@ -281,11 +316,22 @@ def wake(on):
 
 
 def reaper():
+    """Stops idle conversations, and logs a running turn with no output for a minute and the
+    bridge itself having been paused (frozen by the system: it did not run for a while)."""
+    tick = time.monotonic()
     while True:
-        time.sleep(60)
+        time.sleep(5)
+        now = time.monotonic()
+        if now - tick > 20:
+            log('bridge was paused for %ds (frozen by the system?)' % (now - tick - 5))
+        tick = now
         for chat in list(chats.values()):
             if chat.alive() and not chat.running and time.time() - chat.used > IDLE_SECONDS:
+                log('chat %s: idle, stopping its claude' % chat.key[:8])
                 chat.close()
+            if chat.running and not chat.quiet_logged and time.time() - chat.last_out > 60:
+                chat.quiet_logged = True
+                log('chat %s: no output from claude for 60s (alive: %s)' % (chat.key[:8], chat.alive()))
 
 
 # ---- Saved sessions (Claude Code's own transcripts) ----
@@ -516,6 +562,7 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def reply(self, status, data):
+        self.status = status
         body = json.dumps(data, ensure_ascii=False).encode('utf-8', 'replace')  # lone surrogates
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -527,7 +574,24 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get('Content-Length') or 0)
         return json.loads(self.rfile.read(n) or b'{}') if n else {}
 
+    def logged(self, method, run):
+        """Runs a request and logs it (not health checks), with its status and time."""
+        path = self.path.split('?')[0]
+        start = time.time()
+        self.status = None
+        try:
+            run()
+        finally:
+            if path not in ('/health', '/events'):
+                log('%s %s -> %s, %dms' % (method, path, self.status or 'no answer', (time.time() - start) * 1000))
+
     def do_GET(self):
+        self.logged('GET', self.do_get)
+
+    def do_POST(self):
+        self.logged('POST', self.do_post)
+
+    def do_get(self):
         if not self.authorized():
             return
         try:
@@ -569,7 +633,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.reply(404, {'error': 'not found'})
 
-    def do_POST(self):
+    def do_post(self):
         if not self.authorized():
             return
         try:
@@ -666,6 +730,7 @@ class Handler(BaseHTTPRequestHandler):
                 since = 0
             self.wfile.write(b': hello\n\n')
             self.wfile.flush()
+            log('events: app connected')
             while True:
                 batch = hub.after(since, 15)
                 if not batch:
@@ -675,7 +740,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b'data: ' + json.dumps(e, ensure_ascii=False).encode('utf-8', 'replace') + b'\n\n')
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
-            pass
+            log('events: app gone')
 
 
 def running_bridge():
@@ -743,9 +808,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--token', required=True)
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--reason', default='')
     args = parser.parse_args()
     replace_running_bridge()
-    log('start pid %d version %d' % (os.getpid(), VERSION))
+    log('start pid %d version %d (%s)' % (os.getpid(), VERSION, args.reason or 'started by hand'))
     os.makedirs(DEFAULT_CWD, exist_ok=True)
     wake(True)
 
