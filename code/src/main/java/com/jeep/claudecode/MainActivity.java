@@ -532,13 +532,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private static String shortModel(String m) {
-        if (m == null || m.isEmpty()) return "默认模型";
-        switch (m) { // Claude Code's model aliases
-            case "opus": return "Opus";
-            case "sonnet": return "Sonnet";
-            case "haiku": return "Haiku";
-            default: return m.replaceAll("(?i)\\[1m\\]$", "");
-        }
+        return m == null || m.isEmpty() ? "默认模型" : m.replaceAll("(?i)\\[1m\\]$", "");
     }
 
     private void fillEmpty() {
@@ -1546,9 +1540,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private void modelSheet() {
         Dialog sheet = sheet("模型", "对新消息生效；“默认”用 Claude Code 设置里的模型。");
         LinearLayout card = card(sheet);
+        // The models in Claude Code's settings, then the ones typed here before: whatever the provider.
         List<String> all = new ArrayList<>();
         all.add("");
         all.addAll(models);
+        for (String m : usedModels()) if (!all.contains(m)) all.add(m);
         for (String m : all) {
             option(card, 0, m.isEmpty() ? "默认" : shortModel(m), m.isEmpty() ? (defaultModel.isEmpty() ? "settings.json" : defaultModel) : m, false, () -> {
                 model = m;
@@ -1558,7 +1554,32 @@ public final class MainActivity extends Activity implements Bridge.Events {
             });
             if (m.equals(model)) check(card);
         }
+        option(card, R.drawable.ic_pencil, "其他模型…", "填 Claude Code 能用的任意模型名", false, () -> {
+            sheet.dismiss();
+            textSheet("其他模型", model, "模型名", false, (t, done) -> {
+                String name = t.trim();
+                if (!name.isEmpty()) {
+                    List<String> used = usedModels();
+                    used.remove(name);
+                    used.add(0, name);
+                    prefs.edit().putString("usedModels", new JSONArray(used.subList(0, Math.min(8, used.size()))).toString()).apply();
+                }
+                model = name;
+                prefs.edit().putString("model", model).apply();
+                updateChrome();
+                done.run();
+            }, null);
+        });
         sheet.show();
+    }
+
+    private List<String> usedModels() {
+        List<String> out = new ArrayList<>();
+        try {
+            JSONArray a = new JSONArray(prefs.getString("usedModels", "[]"));
+            for (int i = 0; i < a.length(); i++) out.add(a.optString(i));
+        } catch (org.json.JSONException ignored) { /* none */ }
+        return out;
     }
 
     private static final String[][] PERMISSION_MODES = {
@@ -1601,9 +1622,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
         String extra = launch.optString("extraArgs");
         option(cmd, R.drawable.ic_terminal, "权限模式", modeLabel, false, () -> { sheet.dismiss(); permissionSheet(mode); });
         option(cmd, R.drawable.ic_spark, "追加系统提示", prompt.trim().isEmpty() ? "未设置" : oneLine(prompt), false,
-                () -> { sheet.dismiss(); textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done)); });
+                () -> { sheet.dismiss(); textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::settingsSheet); });
         option(cmd, R.drawable.ic_edit_lines, "额外参数", extra.trim().isEmpty() ? "未设置" : extra, false,
-                () -> { sheet.dismiss(); textSheet("额外参数", extra, "例如：--max-turns 50 --add-dir ~/notes", false, (t, done) -> saveLaunch("extraArgs", t, done)); });
+                () -> { sheet.dismiss(); textSheet("额外参数", extra, "例如：--max-turns 50 --add-dir ~/notes", false, (t, done) -> saveLaunch("extraArgs", t, done), this::settingsSheet); });
         String folder = current.cwd == null || current.cwd.isEmpty() ? (cwd.isEmpty() ? defaultCwd : cwd) : current.cwd;
         option(cmd, R.drawable.ic_book, "CLAUDE.md · 全局", "~/.claude/CLAUDE.md，每个对话都带上", false,
                 () -> { sheet.dismiss(); memorySheet("global", null, "CLAUDE.md · 全局"); });
@@ -1693,12 +1714,12 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 bridge.post("/memory", body, (s2, r2) -> {
                     if (s2 == 200) { toast("已保存，下一条消息起生效"); done.run(); } else toast("保存失败");
                 });
-            });
+            }, this::settingsSheet);
         });
     }
 
     private void textSheet(String title, String value, String hint, boolean multiLine,
-                           java.util.function.BiConsumer<String, Runnable> save) {
+                           java.util.function.BiConsumer<String, Runnable> save, Runnable back) {
         Dialog sheet = sheet(title, null);
         EditText field = new EditText(this);
         field.setText(value);
@@ -1719,10 +1740,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
         content(sheet).addView(field, Ui.fill());
         LinearLayout actions = Ui.row(this);
-        TextView cancel = button("取消", false, v -> { sheet.dismiss(); settingsSheet(); });
+        TextView cancel = button("取消", false, v -> { sheet.dismiss(); if (back != null) back.run(); });
         TextView ok = button("保存", true, v -> save.accept(field.getText().toString(), () -> {
             sheet.dismiss();
-            settingsSheet();
+            if (back != null) back.run();
         }));
         ok.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
         ok.setTextColor(col(R.color.bg));
