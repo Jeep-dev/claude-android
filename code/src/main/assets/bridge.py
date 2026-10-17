@@ -12,6 +12,7 @@ import base64
 import hmac
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -21,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 4  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 5  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -29,6 +30,8 @@ STATE_DIR = os.path.join(HOME, '.ccapp')
 PID_FILE = os.path.join(STATE_DIR, 'bridge.pid')
 DEFAULT_CWD = os.path.join(HOME, 'work')
 LOG_FILE = os.path.join(STATE_DIR, 'bridge.log')
+LAUNCH_FILE = os.path.join(STATE_DIR, 'launch.json')
+PERMISSION_MODES = ('bypassPermissions', 'acceptEdits', 'plan', 'default')
 STARTED = time.time()  # tells the app a new bridge took over (turns of the old one are gone)
 IDLE_SECONDS = 15 * 60  # an idle conversation's process is stopped; it resumes on the next message
 
@@ -60,6 +63,53 @@ class Hub:
 hub = Hub()
 
 
+class Launch:
+    """How Claude Code is started, set in the app: permission mode, text appended to the system
+    prompt and extra arguments. A change restarts idle conversations on their next message."""
+
+    def __init__(self):
+        self.gen = 0
+        self.data = {'permissionMode': 'bypassPermissions', 'appendSystemPrompt': '', 'extraArgs': ''}
+        try:
+            with open(LAUNCH_FILE, encoding='utf-8') as f:
+                self.data.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+
+    def set(self, data):
+        new = dict(self.data)
+        for key in ('permissionMode', 'appendSystemPrompt', 'extraArgs'):
+            if key in data:
+                new[key] = str(data[key] or '')
+        if new['permissionMode'] not in PERMISSION_MODES:
+            raise ValueError('unknown permission mode %s' % new['permissionMode'])
+        shlex.split(new['extraArgs'])  # ValueError on bad quoting
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(LAUNCH_FILE, 'w', encoding='utf-8') as f:
+            json.dump(new, f, ensure_ascii=False, indent=1)
+        self.data = new
+        self.gen += 1
+
+    def args(self):
+        args = ['--permission-mode', self.data['permissionMode']]
+        if self.data['appendSystemPrompt'].strip():
+            args += ['--append-system-prompt', self.data['appendSystemPrompt']]
+        args += [os.path.expanduser(a) for a in shlex.split(self.data['extraArgs'])]
+        return args
+
+
+launch = Launch()
+
+
+def memory_path(scope, cwd=None):
+    """CLAUDE.md the app edits: the user's own (every conversation) or a working folder's."""
+    if scope == 'global':
+        return os.path.join(CLAUDE_DIR, 'CLAUDE.md')
+    if scope == 'folder' and cwd:
+        return os.path.join(os.path.expanduser(cwd), 'CLAUDE.md')
+    raise ValueError('unknown scope')
+
+
 def claude_path():
     return shutil.which('claude') or os.path.join(os.environ.get('PREFIX', '/usr'), 'bin', 'claude')
 
@@ -77,13 +127,14 @@ class Chat:
         self.stderr = []
         self.lock = threading.Lock()
         self.stopping = None
+        self.launch_gen = None
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
     def start(self):
         args = [claude_path(), '-p', '--input-format', 'stream-json', '--output-format', 'stream-json',
-                '--verbose', '--include-partial-messages', '--permission-mode', 'bypassPermissions']
+                '--verbose', '--include-partial-messages']
         if self.session_id:
             args += ['--resume', self.session_id]
         if self.model:
@@ -92,6 +143,8 @@ class Chat:
             # Through --settings: CLAUDE_CODE_EFFORT_LEVEL in the user's settings would otherwise
             # override both --effort and /effort.
             args += ['--settings', json.dumps({'env': {'CLAUDE_CODE_EFFORT_LEVEL': self.effort}})]
+        args += launch.args()
+        self.launch_gen = launch.gen
         os.makedirs(self.cwd, exist_ok=True)
         self.stderr = []
         self.proc = subprocess.Popen(args, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -135,10 +188,10 @@ class Chat:
                 self.session_id = session_id
             if cwd and not self.alive():
                 self.cwd = cwd
-            if model != self.model or effort != self.effort:
+            if model != self.model or effort != self.effort or self.launch_gen != launch.gen:
                 self.model, self.effort = model, effort
                 if self.alive() and not self.running:
-                    self.close()  # restarts with the new model or effort, resuming the session
+                    self.close()  # restarts with the new settings, resuming the session
             if not self.alive():
                 self.start()
             self.running = True
@@ -468,6 +521,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.authorized():
             return
+        try:
+            self.get()
+        except ValueError as e:
+            self.reply(400, {'error': str(e)})
+
+    def get(self):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         if url.path == '/health':
@@ -482,6 +541,16 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200 if data else 404, data or {'error': 'not found'})
         elif url.path == '/config':
             self.reply(200, read_config())
+        elif url.path == '/launch':
+            self.reply(200, launch.data)
+        elif url.path == '/memory':
+            path = memory_path(q.get('scope'), q.get('cwd'))
+            try:
+                with open(path, encoding='utf-8') as f:
+                    text = f.read()
+            except OSError:
+                text = ''
+            self.reply(200, {'path': path, 'text': text})
         elif url.path == '/dirs':
             self.reply(200, list_dirs(q.get('path')))
         else:
@@ -514,6 +583,16 @@ class Handler(BaseHTTPRequestHandler):
                 chat.running = False
                 return self.reply(500, {'error': str(e)})
             self.reply(200, {'ok': True})
+        elif path == '/launch':
+            launch.set(data)
+            self.reply(200, launch.data)
+        elif path == '/memory':
+            target = memory_path(data.get('scope'), data.get('cwd'))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, 'w', encoding='utf-8') as f:
+                f.write(data.get('text') or '')
+            launch.gen += 1  # Claude Code reads CLAUDE.md when it starts
+            self.reply(200, {'ok': True, 'path': target})
         elif path == '/stop':
             chat_for(data['chat']).stop()
             self.reply(200, {'ok': True})

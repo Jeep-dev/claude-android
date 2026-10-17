@@ -1507,15 +1507,24 @@ public final class MainActivity extends Activity implements Bridge.Events {
         sheet.show();
     }
 
+    private static final String[][] PERMISSION_MODES = {
+            {"bypassPermissions", "不询问", "所有操作直接执行"},
+            {"acceptEdits", "自动接受编辑", "改文件直接执行，其他需要确认的操作会被拒绝"},
+            {"plan", "只做计划", "只读和分析，不改任何东西"},
+            {"default", "默认", "需要确认的操作都会被拒绝（这里没法确认）"},
+    };
+
     private void settingsSheet() {
+        if (!linked) { toast("还没连上 Termux"); return; }
+        bridge.get("/launch", (status, launch) -> {
+            if (status != 200) { toast("读取启动设置失败"); return; }
+            settingsSheet(launch);
+        });
+    }
+
+    private void settingsSheet(JSONObject launch) {
         Dialog sheet = sheet("设置", null);
         LinearLayout box = content(sheet);
-        section(box, "连接");
-        LinearLayout card = card(sheet);
-        kv(card, "Termux 桥接", linked ? "已连接" : "未连接");
-        kv(card, "默认文件夹", tilde(cwd.isEmpty() ? defaultCwd : cwd));
-        kv(card, "模型", model.isEmpty() ? (defaultModel.isEmpty() ? "默认" : defaultModel) : model);
-        kv(card, "思考级别", effortLabel(effort));
         LinearLayout actions = Ui.row(this);
         TextView restart = button("重启桥接", false, v -> {
             sheet.dismiss();
@@ -1528,12 +1537,35 @@ public final class MainActivity extends Activity implements Bridge.Events {
         actions.addView(termux);
         Ui.margins(termux, this, 8, 0, 0, 0);
         box.addView(actions, Ui.fill());
-        Ui.margins(actions, this, 0, 10, 0, 0);
+
+        section(box, "启动命令");
+        LinearLayout cmd = card(sheet);
+        String mode = launch.optString("permissionMode", "bypassPermissions");
+        String modeLabel = mode;
+        for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1] + " · " + m[0];
+        String prompt = launch.optString("appendSystemPrompt");
+        String extra = launch.optString("extraArgs");
+        option(cmd, R.drawable.ic_terminal, "权限模式", modeLabel, false, () -> { sheet.dismiss(); permissionSheet(mode); });
+        option(cmd, R.drawable.ic_spark, "追加系统提示", prompt.trim().isEmpty() ? "未设置" : oneLine(prompt), false,
+                () -> { sheet.dismiss(); textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done)); });
+        option(cmd, R.drawable.ic_edit_lines, "额外参数", extra.trim().isEmpty() ? "未设置" : extra, false,
+                () -> { sheet.dismiss(); textSheet("额外参数", extra, "例如：--max-turns 50 --add-dir ~/notes", false, (t, done) -> saveLaunch("extraArgs", t, done)); });
+        String folder = current.cwd == null || current.cwd.isEmpty() ? (cwd.isEmpty() ? defaultCwd : cwd) : current.cwd;
+        option(cmd, R.drawable.ic_book, "CLAUDE.md · 全局", "~/.claude/CLAUDE.md，每个对话都带上", false,
+                () -> { sheet.dismiss(); memorySheet("global", null, "CLAUDE.md · 全局"); });
+        option(cmd, R.drawable.ic_folder, "CLAUDE.md · 文件夹", tilde(folder) + "/CLAUDE.md", false,
+                () -> { sheet.dismiss(); memorySheet("folder", folder, "CLAUDE.md · " + tilde(folder)); });
+        TextView line = Ui.text(this, commandLine(mode, prompt, extra), 12, R.color.text3);
+        line.setTypeface(Ui.MONO);
+        line.setTextIsSelectable(true);
+        line.setPadding(dp(4), dp(8), dp(4), 0);
+        box.addView(line, Ui.fill());
+
         section(box, "后台保活");
         LinearLayout keep = card(sheet);
         android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
         boolean exempt = pm.isIgnoringBatteryOptimizations(getPackageName());
-        option(keep, R.drawable.ic_termux_app, "Termux 应用设置", "在“耗电管理”里打开“允许后台行为”和“允许自启动”", false, () -> {
+        option(keep, R.drawable.ic_termux_app, "Termux 应用设置", "耗电管理里允许后台行为和自启动", false, () -> {
             try {
                 startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + Bridge.TERMUX)));
             } catch (RuntimeException e) {
@@ -1550,15 +1582,104 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
         String rish = "rish -c 'dumpsys deviceidle whitelist +com.termux; dumpsys deviceidle whitelist +" + getPackageName()
                 + "; cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow; cmd appops set com.termux RUN_IN_BACKGROUND allow'";
-        option(keep, R.drawable.ic_copy, "复制 rish 白名单命令", "在 Termux 里运行一次，把 Termux 和本 App 加进系统省电白名单", false, () -> copy(rish));
-        section(box, "说明");
-        LinearLayout info = card(sheet);
-        kv(info, "权限模式", "不询问（bypass）");
-        kv(info, "发送", "键盘回车或按钮，发完收起键盘");
+        option(keep, R.drawable.ic_copy, "复制 rish 白名单命令", null, false, () -> copy(rish));
+
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { /* none */ }
-        kv(info, "版本", version);
+        TextView v = Ui.text(this, "v" + version, 12, R.color.text3);
+        v.setGravity(Gravity.CENTER);
+        v.setPadding(0, dp(14), 0, 0);
+        box.addView(v, Ui.fill());
         sheet.show();
+    }
+
+    private static String oneLine(String text) {
+        String t = text.trim().replace('\n', ' ');
+        return t.length() > 40 ? t.substring(0, 40) + "…" : t;
+    }
+
+    private static String commandLine(String mode, String prompt, String extra) {
+        StringBuilder b = new StringBuilder("claude -p --permission-mode ").append(mode);
+        if (!prompt.trim().isEmpty()) b.append(" --append-system-prompt '").append(oneLine(prompt)).append("'");
+        if (!extra.trim().isEmpty()) b.append(' ').append(extra.trim());
+        return b.toString();
+    }
+
+    private void saveLaunch(String key, String value, Runnable done) {
+        bridge.post("/launch", obj(key, value), (status, data) -> {
+            if (status == 200) {
+                toast("已保存，下一条消息起生效");
+                done.run();
+            } else {
+                toast(status == 400 ? "参数有误：" + data.optString("error") : "保存失败");
+            }
+        });
+    }
+
+    private void permissionSheet(String mode) {
+        Dialog sheet = sheet("权限模式", null);
+        LinearLayout card = card(sheet);
+        for (String[] m : PERMISSION_MODES) {
+            option(card, 0, m[1] + " · " + m[0], m[2], false, () -> saveLaunch("permissionMode", m[0], () -> {
+                sheet.dismiss();
+                settingsSheet();
+            }));
+            if (m[0].equals(mode)) check(card);
+        }
+        sheet.show();
+    }
+
+    private void memorySheet(String scope, String folder, String title) {
+        String q = "/memory?scope=" + scope + (folder == null ? "" : "&cwd=" + Uri.encode(folder));
+        bridge.get(q, (status, data) -> {
+            if (status != 200) { toast("读取 CLAUDE.md 失败"); return; }
+            textSheet(title, data.optString("text"), "写给 Claude Code 的长期指令", true, (t, done) -> {
+                JSONObject body = obj("scope", scope, "text", t);
+                if (folder != null) body = obj("scope", scope, "cwd", folder, "text", t);
+                bridge.post("/memory", body, (s2, r2) -> {
+                    if (s2 == 200) { toast("已保存，下一条消息起生效"); done.run(); } else toast("保存失败");
+                });
+            });
+        });
+    }
+
+    private void textSheet(String title, String value, String hint, boolean multiLine,
+                           java.util.function.BiConsumer<String, Runnable> save) {
+        Dialog sheet = sheet(title, null);
+        EditText field = new EditText(this);
+        field.setText(value);
+        field.setHint(hint);
+        field.setTextSize(15);
+        field.setTextColor(col(R.color.text));
+        field.setHintTextColor(col(R.color.text3));
+        field.setGravity(Gravity.TOP | Gravity.START);
+        field.setPadding(dp(12), dp(10), dp(12), dp(10));
+        field.setBackground(Ui.round(col(R.color.surface), dp(10), dp(1), col(R.color.borderStrong)));
+        if (multiLine) {
+            field.setMinLines(6);
+            field.setMaxLines(14);
+            field.setTextSize(14);
+        } else {
+            field.setSingleLine(true);
+            field.setTypeface(Ui.MONO);
+        }
+        content(sheet).addView(field, Ui.fill());
+        LinearLayout actions = Ui.row(this);
+        TextView cancel = button("取消", false, v -> { sheet.dismiss(); settingsSheet(); });
+        TextView ok = button("保存", true, v -> save.accept(field.getText().toString(), () -> {
+            sheet.dismiss();
+            settingsSheet();
+        }));
+        ok.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
+        ok.setTextColor(col(R.color.bg));
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(ok, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Ui.margins(ok, this, 10, 0, 0, 0);
+        content(sheet).addView(actions, Ui.fill());
+        Ui.margins(actions, this, 0, 14, 0, 0);
+        if (sheet.getWindow() != null) sheet.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        sheet.show();
+        field.requestFocus();
     }
 
     private void section(LinearLayout box, String label) {
@@ -1566,17 +1687,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setPadding(0, dp(14), 0, dp(6));
         box.addView(t);
-    }
-
-    private void kv(LinearLayout card, String k, String v) {
-        LinearLayout row = Ui.row(this);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
-        row.addView(Ui.text(this, k, 14.5f, R.color.text));
-        TextView b = Ui.text(this, v, 14.5f, R.color.text2);
-        b.setGravity(Gravity.END);
-        b.setPadding(dp(12), 0, 0, 0);
-        row.addView(b, Ui.weight());
-        card.addView(row, Ui.fill());
     }
 
     // ================= misc =================

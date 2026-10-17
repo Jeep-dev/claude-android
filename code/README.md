@@ -1,4 +1,4 @@
-# Claude Code for Android (v0.3.7)
+# Claude Code for Android (v0.3.8)
 
 A native phone interface for Claude Code running in Termux. Separate from the claude.ai app in
 `app/`: its own application id (`com.jeep.claudecode`), name and icon. No WebView: the
@@ -25,7 +25,10 @@ interface is plain Android views (Java), so scrolling and text selection are the
   that adds both apps to the system's idle whitelist and allows Termux to run in the
   background.
 - Each conversation is a `claude -p --input-format stream-json --output-format stream-json`
-  process in bypass-permissions mode, kept alive between turns (stopped after 15 idle minutes)
+  process (bypass-permissions mode unless changed in Settings → 启动命令, which also sets text
+  for `--append-system-prompt` and extra arguments, kept in `~/.ccapp/launch.json`, and edits
+  the global `~/.claude/CLAUDE.md` and the working folder's `CLAUDE.md`; all apply from the next
+  message), kept alive between turns (stopped after 15 idle minutes)
   and resumed from its saved session (`--resume`) when needed. Stop sends Claude Code's
   `interrupt` control request, and ends the process if the turn has not ended 5 s later.
 - The conversation list and history come from Claude Code's own transcripts in
