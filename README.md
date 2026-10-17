@@ -1,9 +1,10 @@
-# Claude for Android (v4.0.6)
+# Claude for Android (v4.1.0)
 
 A plain Android WebView showing Claude (it opens the Claude page last left, at first
 https://claude.ai/code), written from scratch. One small page
-script (below), no theme tweaks; apart from keeping the page rendered in the background (below), the
-WebView runs with its default behaviour.
+script (below), no theme or rendering tweaks; the WebView settings follow the Via browser,
+where selecting text on claude.ai draws correctly (zoom and wide viewport on, algorithmic
+darkening off).
 
 - Claude (`claude.ai`, `*.claude.ai`), Anthropic pages and `accounts.google.com` open in the app;
   every other link opens in the system browser. Embedded frames load normally.
@@ -15,9 +16,8 @@ WebView runs with its default behaviour.
   page (`blob:`/`data:` links with a download name, e.g. Claude's ZIP and Markdown export)
   are read by the page script and passed to the app over a channel only claude.ai frames get
   (`androidx.webkit` web message listener), then saved to Download/Claude.
-- Returning from the background shows the page at once: rendered content is kept
-  (offscreen pre-raster) and Chromium is not told the window was hidden, so Claude does not
-  refresh. Costs some memory, and a streaming reply keeps running in the background.
+- Returning from the background works as in a browser: the page may re-render and Claude
+  may refresh.
 - The status bar takes Claude's background colour (set by Claude's own theme setting: dark
   page, dark status bar; light page, light status bar), with icons to match. The navigation
   bar stays white.

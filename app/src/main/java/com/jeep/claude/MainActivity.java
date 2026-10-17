@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -51,6 +50,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import androidx.webkit.WebMessageCompat;
+import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -74,7 +74,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        web = new KeepVisibleWebView(this);
+        web = new WebView(this);
         // The keyboard only opens for the focused view. The container holds focus until the
         // page is touched, so Claude focusing its message box on its own opens no keyboard.
         root = new FrameLayout(this);
@@ -87,8 +87,15 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        // Keep rendered content while the app is in the background, so returning shows it at once.
-        settings.setOffscreenPreRaster(true);
+        // Zoom and viewport as in Via, where selecting text on claude.ai draws correctly.
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setSupportZoom(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false);
+        }
         CookieManager.getInstance().setAcceptCookie(true);
 
         // WebRTC peer connections off in every page and frame, before any page script runs.
@@ -121,19 +128,6 @@ public final class MainActivity extends Activity {
         String host = uri.getHost();
         return "https".equals(uri.getScheme()) && host != null
                 && (host.equals("claude.ai") || host.endsWith(".claude.ai"));
-    }
-
-    /**
-     * Chromium is not told when the app goes to the background: otherwise it marks the page
-     * hidden, drops its rendered content and Claude refreshes on return. Android still draws
-     * nothing while the window is not visible.
-     */
-    private static final class KeepVisibleWebView extends WebView {
-        KeepVisibleWebView(Context context) { super(context); }
-
-        @Override protected void onWindowVisibilityChanged(int visibility) {
-            super.onWindowVisibilityChanged(View.VISIBLE);
-        }
     }
 
     /** The page script reports Claude's background colour; the status bar takes it. */
