@@ -163,10 +163,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             h.box.setPadding(0, Ui.dp(c, it.gap), 0, 0);
             h.thinkLabel.setText(thinkingLabel(it.block));
             if (h.thinkBody != null && !it.block.text.contentEquals(h.thinkBody.getText())) {
-                boolean atEnd = !h.thinkScroll.canScrollVertically(1);
-                h.thinkBody.setText(it.block.text);
-                MaxScroll scroll = h.thinkScroll;
-                if (it.block.streaming && atEnd) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+                h.thinkBody.setText(it.block.text); // the box follows the end unless scrolled up by hand
             }
             return;
         }
@@ -349,7 +346,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         scroll.setPadding(Ui.dp(c, 14), Ui.dp(c, 2), Ui.dp(c, 6), Ui.dp(c, 2));
         box.addView(wrap, Ui.fill());
         Ui.margins(wrap, c, 3, 4, 0, 2);
-        if (b.streaming) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+        scroll.follow = b.streaming;
     }
 
     /** {icon, tool name, what it acts on}: as Claude Code's terminal shows a step. */
@@ -628,6 +625,9 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
     static final class MaxScroll extends NestedScrollView {
         private final int max;
         private float lastY;
+        /** Keeps the end in view as the text grows; scrolling up by hand stops it, back at the end resumes it. */
+        boolean follow;
+        private boolean touching;
 
         MaxScroll(Context c, int max) {
             super(c);
@@ -639,7 +639,24 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             super.onMeasure(w, MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST));
         }
 
+        @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            super.onLayout(changed, l, t, r, b);
+            if (follow && getChildCount() > 0) {
+                int end = getChildAt(0).getHeight() - (getHeight() - getPaddingTop() - getPaddingBottom());
+                if (end > 0 && getScrollY() != end) scrollTo(0, end);
+            }
+        }
+
+        @Override protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            if (touching) follow = !canScrollVertically(1);
+            else if (!canScrollVertically(1)) follow = true;
+        }
+
         @Override public boolean dispatchTouchEvent(MotionEvent e) {
+            int action = e.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) touching = true;
+            else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) touching = false;
             // Keep the list from taking the drag while this box can still scroll that way.
             if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 lastY = e.getY();
