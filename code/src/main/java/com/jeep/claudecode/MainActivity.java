@@ -109,7 +109,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private RecyclerView list;
     private ThreadAdapter adapter;
     private ScrollView emptyView;
-    private ImageView toBottom, sendBtn;
+    private ImageView toTop, toBottom, sendBtn;
+    /** The jump to the top and to the end: shown while the list is scrolled by hand, then hidden. */
+    private LinearLayout jump;
     private EditText input;
     private LinearLayout attachments, slashMenu, sessionsBox;
     private HorizontalScrollView attachScroll;
@@ -192,6 +194,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     // ================= layout =================
 
     private void build() {
+        shownLink = null; // a new drawer: its state is shown again
         LinearLayout main = Ui.column(this);
         main.setBackgroundColor(col(R.color.bg));
 
@@ -241,7 +244,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
                         int dy = Math.min(below, row.getTop() - list.getPaddingTop());
                         if (dy > 0) list.smoothScrollBy(0, dy);
                     }
-                    toBottom.setVisibility(list.canScrollVertically(1) ? View.VISIBLE : View.GONE);
                     return true;
                 }
             });
@@ -254,7 +256,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 // Scrolling up by hand lets go of the bottom; a layout change at the bottom does not.
                 boolean byHand = rv.getScrollState() != RecyclerView.SCROLL_STATE_IDLE;
                 stick = !(byHand && dy < 0) && !rv.canScrollVertically(1);
-                toBottom.setVisibility(stick ? View.GONE : View.VISIBLE);
+                if (byHand) showJump();
             }
         });
         list.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
@@ -264,14 +266,20 @@ public final class MainActivity extends Activity implements Bridge.Events {
         emptyView = new ScrollView(this);
         emptyView.setFillViewport(true);
         content.addView(emptyView, new FrameLayout.LayoutParams(-1, -1));
-        toBottom = Ui.iconButton(this, R.drawable.ic_arrow_down, 36, 18, R.color.text2);
-        toBottom.setBackground(Ui.press(this, Ui.round(col(R.color.surface), dp(18), dp(1), col(R.color.border)), dp(18)));
-        toBottom.setElevation(dp(3));
-        toBottom.setVisibility(View.GONE);
+        jump = Ui.column(this);
+        jump.setVisibility(View.GONE);
+        toTop = jumpButton(R.drawable.ic_arrow_up);
+        toTop.setOnClickListener(v -> scrollToTop());
+        toBottom = jumpButton(R.drawable.ic_arrow_down);
         toBottom.setOnClickListener(v -> scrollToEnd(true));
-        FrameLayout.LayoutParams tb = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        jump.addView(toTop, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        LinearLayout.LayoutParams down = new LinearLayout.LayoutParams(dp(36), dp(36));
+        down.topMargin = dp(10);
+        jump.addView(toBottom, down);
+        FrameLayout.LayoutParams tb = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
         tb.bottomMargin = dp(12);
-        content.addView(toBottom, tb);
+        tb.rightMargin = dp(14);
+        content.addView(jump, tb);
         main.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
 
         main.addView(buildComposer(), Ui.fill());
@@ -490,9 +498,45 @@ public final class MainActivity extends Activity implements Bridge.Events {
         updateLink();
     }
 
+    private ImageView jumpButton(int icon) {
+        ImageView b = Ui.iconButton(this, icon, 36, 18, R.color.text2);
+        b.setBackground(Ui.press(this, Ui.round(col(R.color.surface), dp(18), dp(1), col(R.color.border)), dp(18)));
+        b.setElevation(dp(3));
+        return b;
+    }
+
+    private final Runnable hideJump = () -> jump.animate().alpha(0f).setDuration(200)
+            .withEndAction(() -> jump.setVisibility(View.GONE)).start();
+
+    /** Shows the jumps that lead somewhere; they go again a moment after the scrolling stops. */
+    private void showJump() {
+        toTop.setVisibility(list.canScrollVertically(-1) ? View.VISIBLE : View.GONE);
+        toBottom.setVisibility(list.canScrollVertically(1) ? View.VISIBLE : View.GONE);
+        ui.removeCallbacks(hideJump);
+        if (toTop.getVisibility() != View.VISIBLE && toBottom.getVisibility() != View.VISIBLE) {
+            jump.setVisibility(View.GONE);
+            return;
+        }
+        jump.animate().cancel();
+        if (jump.getVisibility() != View.VISIBLE) {
+            jump.setAlpha(0f);
+            jump.setVisibility(View.VISIBLE);
+        }
+        jump.animate().alpha(1f).setDuration(120).start();
+        ui.postDelayed(hideJump, 1500);
+    }
+
+    private void scrollToTop() {
+        stick = false;
+        list.stopScroll();
+        LinearLayoutManager lm = (LinearLayoutManager) list.getLayoutManager();
+        // From far down, most of the way at once: a smooth scroll through it all takes too long.
+        if (lm.findFirstVisibleItemPosition() > 6) lm.scrollToPosition(6);
+        list.post(() -> list.smoothScrollToPosition(0));
+    }
+
     private void scrollToEnd(boolean smooth) {
         stick = true;
-        toBottom.setVisibility(View.GONE);
         list.post(() -> {
             // The reader may have taken the list meanwhile: never pull it back down.
             if (!stick || list.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING) return;

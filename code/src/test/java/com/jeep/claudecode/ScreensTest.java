@@ -250,6 +250,11 @@ public class ScreensTest {
         call(a, "restyle");
         idle();
         shot(a.getWindow().getDecorView(), "13-large");
+        androidx.recyclerview.widget.RecyclerView list = (androidx.recyclerview.widget.RecyclerView) get(a, "list");
+        list.scrollBy(0, -400);
+        call(a, "showJump");
+        ShadowLooper.idleMainLooper(300, java.util.concurrent.TimeUnit.MILLISECONDS);
+        shot(a.getWindow().getDecorView(), "14-jump");
         Fonts.setSize(a, 1);
         Themes.set(a, "system");
     }
