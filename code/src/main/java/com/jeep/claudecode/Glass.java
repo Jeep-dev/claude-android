@@ -50,10 +50,13 @@ final class Glass {
         }
     }
 
-    /** A rounded pane of glass: what is under it blurred, its tint over that, a hairline round it. */
+    /**
+     * A rounded pane of glass: the page's colour (so nothing sharp shows through), what is under
+     * it blurred, its tint, a hairline round it.
+     */
     static final class Pane extends LinearLayout {
         private final float radius;
-        private final int tint, solid;
+        private final int tint, solid, base;
         private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG), fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path shape = new Path();
         private final RectF bounds = new RectF();
@@ -61,9 +64,10 @@ final class Glass {
         private boolean recorded;
 
         /** radius < 0: a circle. */
-        Pane(Context c, Host host, float radius, int tint, int solid, int stroke) {
+        Pane(Context c, Host host, float radius, int base, int tint, int solid, int stroke) {
             super(c);
             this.radius = radius;
+            this.base = base;
             this.tint = tint;
             this.solid = solid;
             setWillNotDraw(false);
@@ -84,7 +88,7 @@ final class Glass {
                 if (blurred == null) blurred = new android.graphics.RenderNode("glass");
                 android.graphics.RenderNode node = (android.graphics.RenderNode) blurred;
                 node.setPosition(0, 0, w, h);
-                float blur = Ui.dp(getContext(), 22);
+                float blur = Ui.dp(getContext(), 26);
                 node.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(blur, blur, android.graphics.Shader.TileMode.CLAMP));
             }
         }
@@ -113,10 +117,14 @@ final class Glass {
             if (recorded && blurs() && canvas.isHardwareAccelerated()) {
                 canvas.save();
                 canvas.clipPath(shape);
+                canvas.drawColor(base);
                 canvas.drawRenderNode((android.graphics.RenderNode) blurred);
                 canvas.drawColor(tint);
                 canvas.restore();
             } else {
+                fill.setColor(base);
+                canvas.drawRoundRect(bounds, r, r, fill);
+                fill.setColor(solid);
                 canvas.drawRoundRect(bounds, r, r, fill);
             }
             float half = line.getStrokeWidth() / 2f;

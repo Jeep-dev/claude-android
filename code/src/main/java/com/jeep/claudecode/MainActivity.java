@@ -201,6 +201,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private LinearLayout topButtons, drawerPanel;
     /** The status bar's height and what covers the bottom (navigation bar or keyboard), immersive only. */
     private int insetTop, insetBottom;
+    private boolean keyboard;
 
     private void build() {
         shownLink = null; // a new drawer: its state is shown again
@@ -349,7 +350,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         topButtons.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(44)));
         topButtons.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         if (Themes.showTitle(this)) {
-            Glass.Pane pill = new Glass.Pane(this, host, -1, Glass.alpha(col(R.color.surface), 0.55f),
+            Glass.Pane pill = new Glass.Pane(this, host, -1, col(R.color.bg), Glass.alpha(col(R.color.surface), 0.55f),
                     Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
             pill.setGravity(Gravity.CENTER);
             pill.setPadding(dp(16), 0, dp(16), 0);
@@ -375,9 +376,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
         host.setOnApplyWindowInsetsListener((v, insets) -> {
             insetTop = insets.getSystemWindowInsetTop();
             insetBottom = insets.getSystemWindowInsetBottom();
+            keyboard = insetBottom > getResources().getDisplayMetrics().heightPixels / 6;
             if (Build.VERSION.SDK_INT >= 30) {
                 insetBottom = Math.max(insetBottom, insets.getInsets(android.view.WindowInsets.Type.ime()
                         | android.view.WindowInsets.Type.navigationBars()).bottom);
+                keyboard = insets.isVisible(android.view.WindowInsets.Type.ime());
             }
             placeImmersive();
             return insets;
@@ -387,7 +390,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private Glass.Pane glassButton(int icon) {
-        Glass.Pane b = new Glass.Pane(this, host, -1, Glass.alpha(col(R.color.surface), 0.55f),
+        Glass.Pane b = new Glass.Pane(this, host, -1, col(R.color.bg), Glass.alpha(col(R.color.surface), 0.55f),
                 Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
         b.setGravity(Gravity.CENTER);
         b.addView(Ui.icon(this, icon, 21, R.color.text2));
@@ -397,15 +400,18 @@ public final class MainActivity extends Activity implements Bridge.Events {
     /** Places what floats, and keeps the conversation clear of it, for the bars' sizes now. */
     private void placeImmersive() {
         if (!immersive || composer == null) return;
-        composer.setPadding(dp(12), dp(4), dp(12), insetBottom + dp(12));
-        drawerPanel.setPadding(0, insetTop, 0, insetBottom);
-        ((FrameLayout.LayoutParams) topButtons.getLayoutParams()).topMargin = insetTop + dp(6);
-        ((FrameLayout.LayoutParams) banner.getLayoutParams()).setMargins(dp(12), insetTop + dp(58), dp(12), 0);
-        fadeTop.getLayoutParams().height = insetTop + dp(56);
-        fadeBottom.getLayoutParams().height = insetBottom + dp(110);
-        int box = composer.getHeight() > 0 ? composer.getHeight() : insetBottom + dp(70);
+        // The buttons just under the status bar, and the box as far from the bottom as they are
+        // from the top (or just above the keyboard).
+        int below = keyboard ? insetBottom + dp(8) : Math.max(insetBottom + dp(8), insetTop);
+        composer.setPadding(dp(12), dp(4), dp(12), below);
+        drawerPanel.setPadding(0, insetTop, 0, keyboard ? 0 : insetBottom);
+        ((FrameLayout.LayoutParams) topButtons.getLayoutParams()).topMargin = insetTop;
+        ((FrameLayout.LayoutParams) banner.getLayoutParams()).setMargins(dp(12), insetTop + dp(52), dp(12), 0);
+        int box = composer.getHeight() > 0 ? composer.getHeight() : below + dp(58);
+        fadeTop.getLayoutParams().height = insetTop + dp(68);
+        fadeBottom.getLayoutParams().height = box + dp(24);
         ((FrameLayout.LayoutParams) jump.getLayoutParams()).bottomMargin = box + dp(8);
-        int top = insetTop + dp(56);
+        int top = insetTop + dp(50);
         if (list.getPaddingTop() != top || list.getPaddingBottom() != box + dp(12)) {
             list.setPadding(dp(18), top, dp(18), box + dp(12));
             emptyView.setPadding(0, top, 0, box);
@@ -438,7 +444,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         wrap.setPadding(dp(12), dp(4), dp(12), dp(18));
         LinearLayout card;
         if (immersive) {
-            card = new Glass.Pane(this, host, dp(26), Glass.alpha(col(R.color.surface), 0.55f),
+            card = new Glass.Pane(this, host, dp(26), col(R.color.bg), Glass.alpha(col(R.color.surface), 0.55f),
                     Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
             card.setOrientation(LinearLayout.VERTICAL);
         } else {
