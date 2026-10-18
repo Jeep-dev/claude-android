@@ -352,7 +352,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             ImageView i = Ui.icon(c, icon, 16, R.color.text2);
             frame.addView(i, new FrameLayout.LayoutParams(Ui.dp(c, 16), Ui.dp(c, 16), Gravity.CENTER));
             head.addView(frame, new LinearLayout.LayoutParams(Ui.dp(c, 24), Ui.dp(c, 24)));
-        } else {
+        } else if (icon != 0) {
             head.addView(Ui.icon(c, icon, 17, R.color.text2));
         }
         return head;
@@ -376,15 +376,14 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
 
     private void thinking(Holder h, Chat.Block b) {
         LinearLayout box = h.box;
-        LinearLayout head = head(R.drawable.ic_brain, false);
+        // Just the words: a tap opens it.
+        LinearLayout head = head(0, false);
         TextView t = Ui.text(c, thinkingLabel(b), 14.5f, R.color.text2);
         h.thinkLabel = t;
         h.thinkOpen = b.open;
         h.thinkBody = null;
         h.thinkScroll = null;
-        t.setPadding(Ui.dp(c, 9), 0, 0, 0);
         head.addView(t, Ui.weight());
-        head.addView(chevron(b.open));
         head.setOnClickListener(v -> toggle(b, (View) v.getParent()));
         box.addView(head);
         if (!b.open) return;
