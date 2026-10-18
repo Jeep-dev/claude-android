@@ -32,7 +32,9 @@ final class Md {
     private static final Pattern TABLE_RULE = Pattern.compile("^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-*:?\\s*)*\\|?\\s*$");
 
     private final Context c;
-    private final Markwon markwon;
+    private Markwon markwon;
+    /** Bumped when the conversation font changes: text set before is set again. */
+    private int fontGen;
     private final Consumer<String> copy;
     private final Consumer<String> openLink;
 
@@ -40,6 +42,16 @@ final class Md {
         this.c = c;
         this.copy = copy;
         this.openLink = openLink;
+        markwon = build();
+    }
+
+    /** The conversation font changed: headings and text take it on their next update. */
+    void fontChanged() {
+        markwon = build();
+        fontGen++;
+    }
+
+    private Markwon build() {
         TableTheme table = TableTheme.buildWithDefaults(c)
                 .tableBorderColor(Ui.color(c, R.color.border))
                 .tableBorderWidth(Ui.dp(c, 1))
@@ -48,7 +60,7 @@ final class Md {
                 .tableEvenRowBackgroundColor(Ui.color(c, R.color.bg))
                 .tableOddRowBackgroundColor(Ui.color(c, R.color.bg))
                 .build();
-        markwon = Markwon.builder(c)
+        return Markwon.builder(c)
                 .usePlugin(StrikethroughPlugin.create())
                 .usePlugin(TablePlugin.create(table))
                 .usePlugin(LinkifyPlugin.create())
@@ -66,7 +78,7 @@ final class Md {
                                 .bulletWidth(Ui.dp(c, 5))
                                 .listItemColor(Ui.color(c, R.color.text2))
                                 .headingBreakHeight(0)
-                                .headingTypeface(Ui.SERIF)
+                                .headingTypeface(Fonts.body(c))
                                 .headingTextSizeMultipliers(new float[]{1.4f, 1.25f, 1.12f, 1f, 1f, 1f})
                                 .thematicBreakColor(Ui.color(c, R.color.border));
                     }
@@ -147,7 +159,6 @@ final class Md {
         t.setLayoutParams(Ui.fill());
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16.5f);
         t.setTextColor(Ui.color(c, R.color.text));
-        t.setTypeface(Ui.SERIF);
         t.setLineSpacing(0, 1.3f);
         t.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);
         selectable(t);
@@ -157,8 +168,10 @@ final class Md {
 
     private void setProse(TextView t, String markdown) {
         String md = markdown.trim();
-        if (md.equals(t.getTag(R.id.markdown))) return;
+        if (md.equals(t.getTag(R.id.markdown)) && Integer.valueOf(fontGen).equals(t.getTag(R.id.font))) return;
         t.setTag(R.id.markdown, md);
+        t.setTag(R.id.font, fontGen);
+        t.setTypeface(Fonts.body(c));
         markwon.setMarkdown(t, md);
         if (t.getWidth() == 0 && md.contains("|")) {
             // Tables size their columns from the text's width: render again once that is known.
@@ -190,8 +203,9 @@ final class Md {
 
     /** Rows of cells, each measured as it is laid out: the same height on every update. */
     private void fillTable(View scroll, String markdown) {
-        if (markdown.equals(scroll.getTag(R.id.markdown))) return;
+        if (markdown.equals(scroll.getTag(R.id.markdown)) && Integer.valueOf(fontGen).equals(scroll.getTag(R.id.font))) return;
         scroll.setTag(R.id.markdown, markdown);
+        scroll.setTag(R.id.font, fontGen);
         android.widget.TableLayout t = (android.widget.TableLayout) ((android.view.ViewGroup) scroll).getChildAt(0);
         String[] lines = markdown.split("\n");
         List<String> aligns = cells(lines[1]);
@@ -217,7 +231,6 @@ final class Md {
                     cell.setMaxWidth(maxCell);
                     cell.setPadding(Ui.dp(c, 10), Ui.dp(c, 7), Ui.dp(c, 10), Ui.dp(c, 7));
                     cell.setBackgroundColor(Ui.color(c, i == 0 ? R.color.surface2 : R.color.bg));
-                    if (i == 0) cell.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
                     android.widget.TableRow.LayoutParams lp = new android.widget.TableRow.LayoutParams(-2, -1);
                     lp.setMargins(0, 0, line, line);
                     row.addView(cell, lp);
@@ -226,7 +239,9 @@ final class Md {
                 cell.setGravity(a.startsWith(":") && a.endsWith(":") ? android.view.Gravity.CENTER_HORIZONTAL
                         : a.endsWith(":") ? android.view.Gravity.END : android.view.Gravity.START);
                 String md = k < cells.size() ? cells.get(k) : "";
-                if (!md.equals(cell.getTag(R.id.markdown))) {
+                cell.setTypeface(i == 0 ? android.graphics.Typeface.create(Fonts.body(c), android.graphics.Typeface.BOLD) : Fonts.body(c));
+                if (!md.equals(cell.getTag(R.id.markdown)) || cell.getTag(R.id.font) == null || (int) cell.getTag(R.id.font) != fontGen) {
+                    cell.setTag(R.id.font, fontGen);
                     cell.setTag(R.id.markdown, md);
                     CharSequence styled = markwon.toMarkdown(md);
                     int end = styled.length();

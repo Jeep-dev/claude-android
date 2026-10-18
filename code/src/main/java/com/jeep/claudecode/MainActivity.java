@@ -64,7 +64,7 @@ import org.json.JSONObject;
 
 /** Claude Code front end: native interface for Claude Code running in this app's own userland behind the bridge. */
 public final class MainActivity extends Activity implements Bridge.Events {
-    private static final int PICK_FILES = 1;
+    private static final int PICK_FILES = 1, PICK_FONT = 2;
     private static final int ASK_STORAGE = 2;
     private static final String STORAGE = android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
@@ -1442,6 +1442,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
+        if (request == PICK_FONT && result == RESULT_OK && data != null && data.getData() != null) {
+            addFont(data.getData());
+            return;
+        }
         if (request != PICK_FILES || result != RESULT_OK || data == null) return;
         List<Uri> uris = new ArrayList<>();
         if (data.getClipData() != null) {
@@ -1917,6 +1921,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
                     () -> memorySheet("folder", folder, "CLAUDE.md · " + Ui.base(folder)));
         }
 
+        section(box, "字体");
+        LinearLayout look = card(box);
+        option(look, 0, "中文", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
+        option(look, 0, "英文", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
+
         section(box, "扩展");
         LinearLayout ext = card(box);
         int skills = skillNames().size();
@@ -1962,6 +1971,94 @@ public final class MainActivity extends Activity implements Bridge.Events {
         v.setGravity(Gravity.CENTER);
         v.setPadding(0, dp(18), 0, 0);
         box.addView(v, Ui.fill());
+    }
+
+    // ---- fonts ----
+
+    /** The fonts to choose from for Chinese or Latin text, each shown in itself. */
+    /** Which sheet a font file is imported from, to return to it. */
+    private boolean fontCjk = true;
+
+    private void fontSheet(boolean cjk) {
+        fontCjk = cjk;
+        Dialog sheet = sheet(cjk ? "中文字体" : "英文字体", null);
+        LinearLayout card = card(sheet);
+        String now = cjk ? Fonts.cjk(this) : Fonts.latin(this);
+        TextView wait = Ui.text(this, "…", 14, R.color.text3);
+        wait.setGravity(Gravity.CENTER);
+        wait.setPadding(0, dp(18), 0, dp(18));
+        card.addView(wait, Ui.fill());
+        LinearLayout add = card(sheet);
+        Ui.margins(add, this, 0, 10, 0, 0);
+        option(add, R.drawable.ic_plus, "导入字体文件", "ttf / otf", false, () -> {
+            sheet.dismiss();
+            Intent pick = new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+            try {
+                startActivityForResult(pick, PICK_FONT);
+            } catch (android.content.ActivityNotFoundException e) {
+                toast("没有可用的文件选择器");
+            }
+        });
+        sheet.show();
+        // Reading the phone's fonts takes a moment: off the main thread.
+        work.execute(() -> {
+            List<Fonts.Choice> all = Fonts.choices(this, cjk);
+            ui.post(() -> {
+                card.removeAllViews();
+                String sample = cjk ? "  永字八法" : "  Aa";
+                for (Fonts.Choice f : all) {
+                    option(card, 0, f.name + sample, null, false, () -> {
+                        Fonts.set(this, cjk, f.id);
+                        md.fontChanged();
+                        sheet.dismiss();
+                        adapter.notifyDataSetChanged();
+                        refreshSettings();
+                    });
+                    LinearLayout row = (LinearLayout) card.getChildAt(card.getChildCount() - 1);
+                    ((TextView) row.getChildAt(0)).setTypeface(f.preview);
+                    if (f.id.equals(now)) check(card);
+                }
+            });
+        });
+    }
+
+    /** Copies a picked font file into files/fonts, where it is offered with the others. */
+    private void addFont(Uri uri) {
+        work.execute(() -> {
+            String name = "font.ttf";
+            try (Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+                if (c != null && c.moveToFirst()) {
+                    int n = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (n >= 0 && c.getString(n) != null) name = c.getString(n);
+                }
+            } catch (RuntimeException ignored) {
+                // default name
+            }
+            String safe = name.replaceAll("[/\\\\]", "_");
+            if (!safe.toLowerCase(Locale.ROOT).matches(".*\\.(ttf|otf|ttc)$")) {
+                ui.post(() -> toast("只支持 ttf、otf、ttc"));
+                return;
+            }
+            java.io.File out = new java.io.File(Fonts.dir(this), safe);
+            String error = null;
+            try (InputStream in = getContentResolver().openInputStream(uri)) {
+                if (in == null) throw new java.io.IOException("读不到文件");
+                Fonts.dir(this).mkdirs();
+                try (java.io.OutputStream o = new java.io.FileOutputStream(out)) {
+                    Userland.copy(in, o);
+                }
+                if (Typeface.createFromFile(out) == Typeface.DEFAULT) throw new java.io.IOException("不是可用的字体");
+            } catch (Exception e) {
+                out.delete();
+                error = e.getMessage();
+            }
+            String err = error;
+            ui.post(() -> {
+                if (err != null) { toast("导入失败：" + err); return; }
+                toast("已导入");
+                fontSheet(fontCjk);
+            });
+        });
     }
 
     // ---- extensions: skills, tools, MCP servers ----

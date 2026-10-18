@@ -244,6 +244,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         }
         if (!m.text.isEmpty()) {
             TextView bubble = Ui.text(c, m.text, 16, R.color.text);
+            bubble.setTypeface(Fonts.body(c));
             bubble.setIncludeFontPadding(true);
             bubble.setLineSpacing(0, 1.15f);
             bubble.setMaxWidth(max);
@@ -384,6 +385,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         if (!b.open) return;
         MaxScroll scroll = new MaxScroll(c, Ui.dp(c, 300));
         TextView body = Ui.text(c, b.text, 14.5f, R.color.text2);
+        body.setTypeface(Fonts.body(c));
         body.setLineSpacing(0, 1.35f);
         body.setTextIsSelectable(true);
         scroll.addView(body);
