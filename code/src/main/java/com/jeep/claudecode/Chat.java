@@ -48,8 +48,6 @@ final class Chat {
         boolean streaming;
         long started, millis;
         boolean open;
-        /** Opened or closed by hand; otherwise thinking shows while it streams and closes after. */
-        boolean toggled;
         int version;
 
         Block(int kind) { this.kind = kind; }

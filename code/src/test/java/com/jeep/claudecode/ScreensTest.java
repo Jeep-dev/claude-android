@@ -188,23 +188,6 @@ public class ScreensTest {
         sw.invoke(a, tools);
         idle();
         shot(root, "10-tools");
-
-        // Thinking shows while it streams
-        Chat th = new Chat("think");
-        Chat.Msg um = new Chat.Msg(Chat.Msg.USER);
-        um.text = "debian 和 ubuntu 对比";
-        th.messages.add(um);
-        Chat.Msg thm = new Chat.Msg(Chat.Msg.ASSISTANT);
-        Chat.Block tb = new Chat.Block(Chat.Block.THINKING);
-        tb.streaming = true;
-        tb.text = "用户想比较两个发行版。先说关系：Ubuntu 基于 Debian。\n然后从发布节奏、软件策略、支持周期几方面对比，最后给出选择建议。";
-        thm.blocks.add(tb);
-        th.messages.add(thm);
-        th.running = true;
-        th.startedAt = System.currentTimeMillis() - 5000;
-        sw.invoke(a, th);
-        idle();
-        shot(root, "12-thinking");
         sw.invoke(a, chat);
         idle();
 
