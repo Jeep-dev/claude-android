@@ -312,6 +312,12 @@ final class Userland {
             c.add("-b");
             c.add(new File(procs, name).getPath() + ":/proc/" + name);
         }
+        // Android's own system, for its programs (app_process for rish): at the same paths.
+        for (String d : ANDROID_DIRS) {
+            if (!new File(d).exists()) continue;
+            c.add("-b");
+            c.add(d);
+        }
         File sd = storage();
         if (sd != null) {
             c.add("-b");
@@ -359,9 +365,67 @@ final class Userland {
         }
     }
 
+    private static final String[] ANDROID_DIRS = {"/system", "/apex", "/vendor", "/product", "/system_ext", "/odm",
+            "/linkerconfig", "/data"};
+    /** Shizuku's app: its APK carries the dex rish runs. */
+    private static final String SHIZUKU = "moe.shizuku.privileged.api";
+
+    /**
+     * rish in the userland, as in Termux: Android's app_process running Shizuku's rish dex, taken
+     * from the installed Shizuku (again only when Shizuku changes), with Android's environment.
+     */
+    private void writeRish() throws IOException {
+        File dir = new File(rootfs, "opt/ccapp");
+        File dex = new File(dir, "rish_shizuku.dex");
+        try {
+            android.content.pm.ApplicationInfo ai = context.getPackageManager().getApplicationInfo(SHIZUKU, 0);
+            File stampFile = new File(dir, "rish.stamp");
+            String stamp = ai.sourceDir + " " + new File(ai.sourceDir).lastModified();
+            String old = stampFile.exists() ? read(new FileInputStream(stampFile)) : "";
+            if (!stamp.equals(old) || !dex.exists()) {
+                try (java.util.zip.ZipFile apk = new java.util.zip.ZipFile(ai.sourceDir)) {
+                    java.util.zip.ZipEntry e = apk.getEntry("assets/rish_shizuku.dex");
+                    if (e != null) {
+                        mkdirs(dir);
+                        dex.delete();
+                        try (InputStream in = apk.getInputStream(e); OutputStream out = new FileOutputStream(dex)) {
+                            copy(in, out);
+                        }
+                        Os.chmod(dex.getPath(), 0400); // Android 14+ loads only a dex nobody can write
+                        write(stampFile, stamp);
+                    }
+                }
+            }
+        } catch (android.content.pm.PackageManager.NameNotFoundException | ErrnoException e) {
+            // no Shizuku: rish says so
+        }
+        StringBuilder env = new StringBuilder();
+        for (java.util.Map.Entry<String, String> e : System.getenv().entrySet()) {
+            String k = e.getKey();
+            if (k.startsWith("ANDROID_") || k.endsWith("CLASSPATH") || k.equals("EXTERNAL_STORAGE")) {
+                env.append("export ").append(k).append("='").append(e.getValue().replace("'", "'\\''")).append("'\n");
+            }
+        }
+        write(new File(dir, "android.env"), env.toString());
+        File rish = new File(rootfs, "usr/local/bin/rish");
+        write(rish, "#!/bin/sh\n"
+                + "dex=/opt/ccapp/rish_shizuku.dex\n"
+                + "[ -f $dex ] || { echo 'rish: 没有安装 Shizuku' >&2; exit 1; }\n"
+                + ". /opt/ccapp/android.env\n"
+                + "export RISH_APPLICATION_ID=" + context.getPackageName() + "\n"
+                + "exec /system/bin/app_process -Djava.class.path=$dex /system/bin --nice-name=rish "
+                + "rikka.shizuku.shell.ShizukuShellLoader \"$@\"\n");
+        try {
+            Os.chmod(rish.getPath(), 0755);
+        } catch (ErrnoException e) {
+            throw new IOException(e);
+        }
+    }
+
     /** Per-start files: DNS servers of the current network, hosts, and stand-ins for /proc files Android hides. */
     private void prepare() throws IOException {
         mkdirs(tmp);
+        writeRish();
         Set<String> dns = new LinkedHashSet<>();
         try {
             ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
