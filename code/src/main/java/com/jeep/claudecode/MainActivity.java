@@ -140,6 +140,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
         // The keyboard opens when the box is tapped, never by itself (coming back from the background).
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
                 | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        night = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        Themes.window(getWindow(), this);
         build();
         switchTo(newChat());
         renderSessions();
@@ -284,7 +286,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private View buildComposer() {
         LinearLayout wrap = Ui.column(this);
-        wrap.setPadding(dp(12), dp(4), dp(12), dp(10));
+        wrap.setPadding(dp(12), dp(4), dp(12), dp(18));
         LinearLayout card = Ui.column(this);
         card.setBackground(Ui.round(col(R.color.surface), dp(26), dp(1), col(R.color.border)));
         card.setElevation(dp(2));
@@ -1752,6 +1754,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             scroll.addView(settingsBox);
             root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
             d.setContentView(root);
+            Themes.window(d.getWindow(), this);
             if (d.getWindow() != null) d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
             d.setOnDismissListener(x -> settingsPage = null);
             settingsPage = d;
@@ -1844,10 +1847,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
                     () -> memorySheet("folder", folder, "CLAUDE.md · " + Ui.base(folder)));
         }
 
-        section(box, "字体");
+        section(box, "外观");
         LinearLayout look = card(box);
-        option(look, 0, "中文", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
-        option(look, 0, "英文", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
+        option(look, 0, "主题", Themes.current(this).name, false, this::themeSheet);
+        option(look, 0, "中文字体", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
+        option(look, 0, "英文字体", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
 
         section(box, "扩展");
         LinearLayout ext = card(box);
@@ -1897,6 +1901,47 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     // ---- fonts ----
+
+    private void themeSheet() {
+        Dialog sheet = sheet("主题", null);
+        LinearLayout card = card(sheet);
+        String now = Themes.current(this).id;
+        for (Themes.Theme t : Themes.ALL) {
+            option(card, 0, t.name, null, false, () -> {
+                sheet.dismiss();
+                if (t.id.equals(Themes.current(this).id)) return;
+                Themes.set(this, t.id);
+                restyle();
+            });
+            if (t.id.equals(now)) check(card);
+        }
+        sheet.show();
+    }
+
+    /** The colours changed: the screen is built again around the same conversations. */
+    private void restyle() {
+        if (settingsPage != null) settingsPage.dismiss();
+        Chat chat = current;
+        chat.draft = input.getText().toString();
+        current = null;
+        md.fontChanged();
+        Themes.window(getWindow(), this);
+        build();
+        switchTo(chat);
+        renderSessions();
+        updateLink();
+    }
+
+    /** The system's light or dark when the screen was built, to follow it when it changes. */
+    private int night;
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config);
+        int now = config.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        if (now == night) return;
+        night = now;
+        if (Themes.current(this).dark == null) restyle();
+    }
 
     /** The fonts to choose from for Chinese or Latin text, each shown in itself. */
     /** Which sheet a font file is imported from, to return to it. */

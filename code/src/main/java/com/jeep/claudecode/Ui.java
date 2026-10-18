@@ -26,7 +26,7 @@ final class Ui {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.getResources().getDisplayMetrics()));
     }
 
-    static int color(Context c, int res) { return c.getColor(res); }
+    static int color(Context c, int res) { return Themes.color(c, res); }
 
     static GradientDrawable round(int fill, float radius) {
         GradientDrawable d = new GradientDrawable();

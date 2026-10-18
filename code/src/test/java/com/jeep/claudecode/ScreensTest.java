@@ -206,6 +206,15 @@ public class ScreensTest {
         call(a, "modelSheet");
         idle();
         shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "11-model");
+        ShadowDialog.getLatestDialog().dismiss();
+
+        for (String theme : new String[]{"black", "paper", "mist", "slate", "dark"}) {
+            Themes.set(a, theme);
+            call(a, "restyle");
+            idle();
+            shot(a.getWindow().getDecorView(), "12-" + theme);
+        }
+        Themes.set(a, "system");
     }
 
     static final class RecyclerScroll {
