@@ -285,6 +285,11 @@ public class ScreensTest {
         call(a, "restyle");
         idle();
         shot(a.getWindow().getDecorView(), "15-immersive-dark");
+        Themes.setShowTitle(a, true);
+        call(a, "restyle");
+        idle();
+        shot(a.getWindow().getDecorView(), "15-immersive-title");
+        Themes.setShowTitle(a, false);
         Themes.set(a, "system");
         Themes.setImmersive(a, false);
     }

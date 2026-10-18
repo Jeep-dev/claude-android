@@ -294,6 +294,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         menu.setOnClickListener(v -> frame.open());
         top.addView(menu, new LinearLayout.LayoutParams(dp(38), dp(38)));
         top.addView(title, Ui.weight());
+        if (!Themes.showTitle(this)) title.setVisibility(View.INVISIBLE);
         ImageView terminal = Ui.iconButton(this, R.drawable.ic_terminal, 38, 20, R.color.text2);
         terminal.setOnClickListener(v -> openTerminal(null));
         top.addView(terminal, new LinearLayout.LayoutParams(dp(38), dp(38)));
@@ -347,6 +348,17 @@ public final class MainActivity extends Activity implements Bridge.Events {
         menu.setOnClickListener(v -> frame.open());
         topButtons.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(44)));
         topButtons.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        if (Themes.showTitle(this)) {
+            Glass.Pane pill = new Glass.Pane(this, host, -1, Glass.alpha(col(R.color.surface), 0.55f),
+                    Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
+            pill.setGravity(Gravity.CENTER);
+            pill.setPadding(dp(16), 0, dp(16), 0);
+            title.setPadding(0, 0, 0, 0);
+            title.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.55f));
+            pill.addView(title);
+            topButtons.addView(pill, new LinearLayout.LayoutParams(-2, dp(44)));
+            topButtons.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        }
         Glass.Pane terminal = glassButton(R.drawable.ic_terminal);
         terminal.setOnClickListener(v -> openTerminal(null));
         topButtons.addView(terminal, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -2129,6 +2141,15 @@ public final class MainActivity extends Activity implements Bridge.Events {
             restyle();
         }));
         themes.addView(look, Ui.fill());
+        LinearLayout titled = Ui.row(this);
+        titled.setPadding(dp(14), dp(6), dp(8), dp(6));
+        titled.setMinimumHeight(dp(50));
+        titled.addView(Ui.text(this, "标题", 15.5f, R.color.text), new LinearLayout.LayoutParams(0, -2, 1));
+        titled.addView(segmented(new String[]{"关", "开"}, Themes.showTitle(this) ? 1 : 0, i -> {
+            Themes.setShowTitle(this, i == 1);
+            restyle();
+        }));
+        themes.addView(titled, Ui.fill());
         option(text, 0, "中文字体", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
         option(text, 0, "英文字体", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
     }

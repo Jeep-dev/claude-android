@@ -68,6 +68,15 @@ final class Themes {
         return c.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("immersive", false);
     }
 
+    /** The conversation's title over it (off by default). */
+    static boolean showTitle(Context c) {
+        return c.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("title", false);
+    }
+
+    static void setShowTitle(Context c, boolean on) {
+        c.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("title", on).apply();
+    }
+
     static void setImmersive(Context c, boolean on) {
         c.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("immersive", on).apply();
     }
