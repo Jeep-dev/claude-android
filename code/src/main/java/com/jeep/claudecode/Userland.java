@@ -365,8 +365,7 @@ final class Userland {
         }
     }
 
-    private static final String[] ANDROID_DIRS = {"/system", "/apex", "/vendor", "/product", "/system_ext", "/odm",
-            "/linkerconfig", "/data"};
+    private static final String[] ANDROID_DIRS = {"/system", "/apex", "/vendor", "/product", "/system_ext", "/odm", "/data"};
     /** Shizuku's app: its APK carries the dex rish runs. */
     private static final String SHIZUKU = "moe.shizuku.privileged.api";
 
@@ -407,6 +406,20 @@ final class Userland {
             }
         }
         write(new File(dir, "android.env"), env.toString());
+        // Android's linker reads its namespaces from /linkerconfig, a directory proot may not
+        // bind (apps can read the file, not look at the directory): a copy, made at each boot.
+        File ld = new File("/linkerconfig/ld.config.txt");
+        File copyLd = new File(rootfs, "linkerconfig/ld.config.txt");
+        if (ld.canRead() && ld.length() != copyLd.length()) {
+            try (InputStream in = new FileInputStream(ld)) {
+                mkdirs(copyLd.getParentFile());
+                try (OutputStream out = new FileOutputStream(copyLd)) {
+                    copy(in, out);
+                }
+            } catch (IOException ignored) {
+                // rish will say what it misses
+            }
+        }
         File rish = new File(rootfs, "usr/local/bin/rish");
         write(rish, "#!/bin/sh\n"
                 + "dex=/opt/ccapp/rish_shizuku.dex\n"
