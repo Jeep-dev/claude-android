@@ -376,7 +376,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
 
     private void thinking(Holder h, Chat.Block b) {
         LinearLayout box = h.box;
-        // Just the words: a tap opens it.
+        // The words and the chevron, no icon.
         LinearLayout head = head(0, false);
         TextView t = Ui.text(c, thinkingLabel(b), 14.5f, R.color.text2);
         h.thinkLabel = t;
@@ -384,6 +384,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         h.thinkBody = null;
         h.thinkScroll = null;
         head.addView(t, Ui.weight());
+        head.addView(chevron(b.open));
         head.setOnClickListener(v -> toggle(b, (View) v.getParent()));
         box.addView(head);
         if (!b.open) return;
