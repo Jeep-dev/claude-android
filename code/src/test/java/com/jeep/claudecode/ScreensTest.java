@@ -198,7 +198,11 @@ public class ScreensTest {
         shot(sheet, "09-settings");
         d.dismiss();
 
-        set(a, "effort", "max");
+        Method cfg = MainActivity.class.getDeclaredMethod("applyConfig", JSONObject.class);
+        cfg.setAccessible(true);
+        cfg.invoke(a, new JSONObject("{\"models\":[\"deepseek-flash[1m]\",\"deepseek-flash\"],\"defaultModel\":\"deepseek-flash[1m]\","
+                + "\"efforts\":[\"low\",\"medium\",\"high\",\"xhigh\",\"max\"],\"effort\":\"max\","
+                + "\"permissionModes\":[\"acceptEdits\",\"auto\",\"bypassPermissions\",\"manual\",\"dontAsk\",\"plan\"]}"));
         call(a, "modelSheet");
         idle();
         shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "11-model");

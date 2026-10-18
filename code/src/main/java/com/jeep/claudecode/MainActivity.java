@@ -67,8 +67,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private static final int PICK_FILES = 1;
     private static final int ASK_STORAGE = 2;
     private static final String STORAGE = android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
-    private static final String[] EFFORTS = {"low", "medium", "high", "xhigh", "max"};
-    private static final String[] EFFORT_NAMES = {"低", "中", "高", "超高", "最高"};
 
     private Bridge bridge;
     private Userland userland;
@@ -88,6 +86,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
     /** Claude Code has an API key or login to use; assumed until the bridge says otherwise. */
     private boolean authSet = true;
     private String claudeVersion = "";
+    /** From Claude Code itself (its --help and settings.json): thinking levels, permission modes, the level set. */
+    private final List<String> efforts = new ArrayList<>(), permissionModes = new ArrayList<>();
+    private String configEffort = "";
     private String home = "", defaultCwd = "", cwd, model, effort, defaultModel = "";
     private final List<String> models = new ArrayList<>();
     private final List<String> commands = new ArrayList<>();
@@ -122,6 +123,12 @@ public final class MainActivity extends Activity implements Bridge.Events {
         cwd = prefs.getString("cwd", "");
         model = prefs.getString("model", "");
         effort = prefs.getString("effort", "");
+        try {
+            fill(efforts, new JSONArray(prefs.getString("efforts", "[]")));
+            fill(permissionModes, new JSONArray(prefs.getString("permissionModes", "[]")));
+        } catch (JSONException ignored) {
+            // none saved
+        }
         try {
             JSONArray saved = new JSONArray(prefs.getString("commands", "[]"));
             for (int i = 0; i < saved.length(); i++) commands.add(saved.optString(i));
@@ -568,13 +575,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return String.valueOf(n);
     }
 
-    /** A model's context window, as Claude Code last reported it; a [1m] model has a million. */
+    /** A model's context window, as Claude Code last reported it. */
     private long windowOf(String m) {
         try {
             long w = new JSONObject(prefs.getString("windows", "{}")).optLong(m);
             if (w > 0) return w;
         } catch (JSONException ignored) { /* none */ }
-        return m.toLowerCase(Locale.ROOT).endsWith("[1m]") ? 1_000_000 : 0;
+        return 0;
     }
 
     private static String shortModel(String m) {
@@ -749,6 +756,28 @@ public final class MainActivity extends Activity implements Bridge.Events {
             }
             renderSessions();
         });
+    }
+
+    /** Takes what the bridge read from Claude Code and its settings. */
+    private void applyConfig(JSONObject data) {
+        fill(models, data.optJSONArray("models"));
+        defaultModel = data.optString("defaultModel");
+        authSet = data.optBoolean("auth", true);
+        claudeVersion = data.optString("claudeVersion");
+        configEffort = data.optString("effort").toLowerCase(Locale.ROOT);
+        // Found a moment after the bridge starts: until then, the last ones it gave.
+        if (data.optJSONArray("efforts") != null && data.optJSONArray("efforts").length() > 0) {
+            fill(efforts, data.optJSONArray("efforts"));
+            fill(permissionModes, data.optJSONArray("permissionModes"));
+            prefs.edit().putString("efforts", data.optJSONArray("efforts").toString())
+                    .putString("permissionModes", String.valueOf(data.optJSONArray("permissionModes"))).apply();
+        }
+        updateChrome();
+    }
+
+    private static void fill(List<String> to, JSONArray from) {
+        to.clear();
+        for (int i = 0; from != null && i < from.length(); i++) to.add(from.optString(i));
     }
 
     private static String group(double mtime) {
@@ -1057,13 +1086,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
         bridge.get("/config", (status, data) -> {
             if (status != 200) return;
-            models.clear();
-            JSONArray m = data.optJSONArray("models");
-            for (int i = 0; m != null && i < m.length(); i++) models.add(m.optString(i));
-            defaultModel = data.optString("defaultModel");
-            authSet = data.optBoolean("auth", true);
-            claudeVersion = data.optString("claudeVersion");
-            updateChrome();
+            applyConfig(data);
             if (current.messages.isEmpty()) renderNow();
         });
         renderNow();
@@ -1274,26 +1297,15 @@ public final class MainActivity extends Activity implements Bridge.Events {
     // ================= slash commands =================
 
     private static final String[][] LOCAL = {
-            {"help", "", "显示所有命令"}, {"new", "", "新对话"}, {"clear", "", "新对话（清空上下文）"},
-            {"effort", "low|medium|high|xhigh|max|default", "思考级别，从下一条消息起生效"},
-            {"model", "名称", "切换模型，不带名称则打开选择"}, {"folder", "", "选择新对话的工作文件夹"},
-            {"stop", "", "停止当前回复"}};
-    private static final String[][] KNOWN = {
-            {"compact", "说明", "压缩上下文，可附上要保留的重点"}, {"context", "", "查看上下文占用"},
-            {"cost", "", "查看这次对话的用量"}, {"init", "", "扫描项目，生成 CLAUDE.md"},
-            {"recap", "", "总结这次对话"}, {"review", "", "审查当前改动"},
-            {"security-review", "", "安全审查当前改动"}, {"simplify", "", "简化刚改过的代码"}};
-    private static final java.util.Set<String> HIDDEN = new java.util.HashSet<>(java.util.Arrays.asList(
-            "clear", "model", "effort", "heapdump", "color", "config", "focus", "fast", "mcp", "agents", "output-style",
-            "reload-plugins", "reload-skills", "auto-mode-setup", "autocompact", "rename", "usage", "insights", "goal",
-            "design-consent", "design-revoke", "list-agents", "team-onboarding", "workflow-launch-exec", "doctor"));
-
+            {"help", "", "所有命令"}, {"new", "", "新对话"}, {"clear", "", "新对话"},
+            {"effort", "", "思考级别"},
+            {"model", "", "模型"}, {"folder", "", "工作文件夹"},
+            {"stop", "", "停止"}};
     /** name -> {args, description, "local" when the app handles it} */
     private LinkedHashMap<String, String[]> commandList() {
         LinkedHashMap<String, String[]> all = new LinkedHashMap<>();
         for (String[] c : LOCAL) all.put(c[0], new String[]{c[1], c[2], "local"});
-        for (String[] c : KNOWN) all.put(c[0], new String[]{c[1], c[2], ""});
-        for (String c : commands) if (!all.containsKey(c) && !HIDDEN.contains(c)) all.put(c, new String[]{"", "技能", ""});
+        for (String c : commands) if (!all.containsKey(c)) all.put(c, new String[]{"", "", ""});
         return all;
     }
 
@@ -1327,11 +1339,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return s;
     }
 
-    private String effortLabel(String e) {
-        for (int i = 0; i < EFFORTS.length; i++) if (EFFORTS[i].equals(e)) return EFFORT_NAMES[i] + "（" + e + "）";
-        return "默认（跟随 Claude Code 设置）";
-    }
-
     private boolean localCommand(String text) {
         String t = text.trim().substring(1);
         String name = t.split("\\s+", 2)[0];
@@ -1360,29 +1367,16 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 return true;
             case "model":
                 if (arg.isEmpty()) { modelSheet(); return true; }
-                model = "default".equals(arg) || "默认".equals(arg) ? "" : arg;
+                model = arg;
                 prefs.edit().putString("model", model).apply();
-                note(styled("模型：", new String[]{"b", shortModel(model.isEmpty() ? defaultModel : model)},
-                        model.isEmpty() ? "（默认）" : "", "，从下一条消息起生效"));
+                updateChrome();
                 return true;
             case "effort": {
-                String level = null;
                 String a = arg.toLowerCase(Locale.ROOT);
-                for (int i = 0; i < EFFORTS.length; i++) if (EFFORTS[i].equals(a) || EFFORT_NAMES[i].equals(arg)) level = EFFORTS[i];
-                if (a.equals("default") || arg.equals("默认") || a.equals("auto")) level = "";
-                if (level == null) {
-                    List<Object> parts = new ArrayList<>();
-                    parts.add("思考级别：");
-                    parts.add(new String[]{"b", effortLabel(effort)});
-                    parts.add("\n可选：");
-                    for (String e : EFFORTS) { parts.add(new String[]{"c", "/effort " + e}); parts.add("   "); }
-                    parts.add(new String[]{"c", "/effort default"});
-                    note(styled(parts.toArray()));
-                    return true;
-                }
-                effort = level;
+                if (a.isEmpty() || (!efforts.isEmpty() && !efforts.contains(a))) { modelSheet(); return true; }
+                effort = a;
                 prefs.edit().putString("effort", effort).apply();
-                note(styled("思考级别：", new String[]{"b", effortLabel(effort)}, "，从下一条消息起生效"));
+                updateChrome();
                 return true;
             }
             default:
@@ -1729,7 +1723,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     /** The thinking level in use: picked here, else Claude Code's own setting. */
     private String effortInUse() {
-        return !effort.isEmpty() ? effort : settingsEnv().optString("CLAUDE_CODE_EFFORT_LEVEL").toLowerCase(Locale.ROOT);
+        return !effort.isEmpty() ? effort : configEffort;
     }
 
     private void modelSheet() {
@@ -1739,7 +1733,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         bar.setPadding(dp(3), dp(3), dp(3), dp(3));
         bar.setBackground(Ui.round(col(R.color.surface2), dp(12)));
         String level = effortInUse();
-        for (String e : EFFORTS) {
+        for (String e : efforts) {
             boolean on = e.equals(level);
             TextView b = Ui.text(this, e, 13.5f, on ? R.color.text : R.color.text2);
             b.setGravity(Gravity.CENTER);
@@ -1756,8 +1750,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
             });
             bar.addView(b, new LinearLayout.LayoutParams(0, dp(34), 1));
         }
-        content(sheet).addView(bar, Ui.fill());
-        Ui.margins(bar, this, 0, 0, 0, 12);
+        if (!efforts.isEmpty()) {
+            content(sheet).addView(bar, Ui.fill());
+            Ui.margins(bar, this, 0, 0, 0, 12);
+        }
         // Models: Claude Code's, then ones typed here; each once.
         List<String> all = new ArrayList<>();
         if (!defaultModel.isEmpty()) all.add(defaultModel);
@@ -1802,13 +1798,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return out;
     }
 
-    private static final String[][] PERMISSION_MODES = {
-            {"bypassPermissions", "不询问", "所有操作直接执行"},
-            {"acceptEdits", "自动接受编辑", "改文件直接执行，其他需要确认的操作会被拒绝"},
-            {"plan", "只做计划", "只读和分析，不改任何东西"},
-            {"default", "默认", "需要确认的操作都会被拒绝（这里没法确认）"},
-    };
-
     private Dialog settingsPage;
     private LinearLayout settingsBox;
     /** The launch options last read from the bridge, shown while they are read again. */
@@ -1851,7 +1840,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         if (!linked) { fillSettings(null); return; }
         // Claude Code's version is found a moment after the bridge starts.
         bridge.get("/config", (st, config) -> {
-            if (st == 200) claudeVersion = config.optString("claudeVersion");
+            if (st == 200) applyConfig(config);
             bridge.get("/launch", (status, launch) -> {
                 if (status == 200) launchCache = launch;
                 fillSettings(status == 200 ? launch : null);
@@ -1915,11 +1904,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
         if (launch != null) {
             String mode = launch.optString("permissionMode", "bypassPermissions");
-            String modeLabel = mode;
-            for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1];
             String prompt = launch.optString("appendSystemPrompt");
             String extra = launch.optString("extraArgs");
-            option(talk, R.drawable.ic_tool, "权限", modeLabel, false, () -> permissionSheet(mode));
+            option(talk, R.drawable.ic_tool, "权限", mode, false, () -> permissionSheet(mode));
             option(talk, R.drawable.ic_spark, "系统提示", oneLine(prompt), false,
                     () -> textSheet("系统提示", prompt, "", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::refreshSettings));
             option(talk, R.drawable.ic_edit_lines, "启动参数", extra.trim(), false,
@@ -2274,12 +2261,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             bridge.post("/launch", new JSONObject(), null); // restarts idle conversations with it
             bridge.get("/config", (status, data) -> {
                 if (status != 200) return;
-                models.clear();
-                JSONArray m = data.optJSONArray("models");
-                for (int i = 0; m != null && i < m.length(); i++) models.add(m.optString(i));
-                defaultModel = data.optString("defaultModel");
-                authSet = data.optBoolean("auth", true);
-                claudeVersion = data.optString("claudeVersion");
+                applyConfig(data);
                 renderNow();
             });
         }
@@ -2475,12 +2457,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private void permissionSheet(String mode) {
         Dialog sheet = sheet("权限模式", null);
         LinearLayout card = card(sheet);
-        for (String[] m : PERMISSION_MODES) {
-            option(card, 0, m[1], null, false, () -> saveLaunch("permissionMode", m[0], () -> {
+        List<String> modes = new ArrayList<>(permissionModes);
+        if (!modes.contains(mode)) modes.add(0, mode);
+        for (String m : modes) {
+            option(card, 0, m, null, false, () -> saveLaunch("permissionMode", m, () -> {
                 sheet.dismiss();
                 refreshSettings();
             }));
-            if (m[0].equals(mode)) check(card);
+            if (m.equals(mode)) check(card);
         }
         sheet.show();
     }

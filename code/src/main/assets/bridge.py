@@ -12,6 +12,7 @@ import base64
 import hmac
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -22,7 +23,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 16  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 17  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -33,7 +34,6 @@ DEFAULT_CWD = os.path.join(HOME, 'work')
 LOG_FILE = os.path.join(STATE_DIR, 'bridge.log')
 LAUNCH_FILE = os.path.join(STATE_DIR, 'launch.json')
 MCP_FILE = os.path.join(STATE_DIR, 'mcp.json')  # MCP servers added in the app's settings
-PERMISSION_MODES = ('bypassPermissions', 'acceptEdits', 'plan', 'default')
 STARTED = time.time()  # tells the app a new bridge took over (turns of the old one are gone)
 IDLE_SECONDS = 15 * 60  # an idle conversation's process is stopped; it resumes on the next message
 
@@ -85,7 +85,7 @@ class Launch:
         for key in ('permissionMode', 'appendSystemPrompt', 'extraArgs', 'disallowedTools'):
             if key in data:
                 new[key] = str(data[key] or '')
-        if new['permissionMode'] not in PERMISSION_MODES:
+        if choices.get('permission-mode') and new['permissionMode'] not in choices['permission-mode']:
             raise ValueError('unknown permission mode %s' % new['permissionMode'])
         shlex.split(new['extraArgs'])  # ValueError on bad quoting
         os.makedirs(STATE_DIR, exist_ok=True)
@@ -569,13 +569,38 @@ def load_history(session_id):
 
 
 claude_version = ''
+choices = {}  # option -> the values Claude Code's --help lists for it, e.g. effort, permission-mode
 
 
-def find_claude_version():
-    global claude_version
+def help_choices(text):
+    """From --help: '--effort <level>  ... (low, medium, high)' -> {'effort': ['low', ...]}."""
+    out, name, desc = {}, None, []
+
+    def done():
+        found = re.findall(r'\(([^()]*)\)', ' '.join(desc))
+        if name and found:
+            values = [v.strip().strip('"\'') for v in found[-1].replace('choices:', '').split(',')]
+            if len(values) > 1 and all(re.match(r'^[\w-]+$', v) for v in values):
+                out[name] = values
+
+    for line in text.splitlines():
+        m = re.match(r'^\s+(?:-\w, )?--([\w-]+)', line)
+        if m:
+            done()
+            name, desc = m.group(1), [line]
+        elif name:
+            desc.append(line)
+    done()
+    return out
+
+
+def find_claude_info():
+    """Claude Code's version and the choices of its options, as it reports them."""
+    global claude_version, choices
     try:
         out = subprocess.run([claude_path(), '--version'], capture_output=True, text=True, timeout=60).stdout
         claude_version = out.split()[0] if out.strip() else ''
+        choices = help_choices(subprocess.run([claude_path(), '--help'], capture_output=True, text=True, timeout=60).stdout)
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -594,14 +619,16 @@ def read_config():
     keys = ('ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN')
     auth = (any(env.get(k) or os.environ.get(k) for k in keys) or bool(settings.get('apiKeyHelper'))
             or os.path.exists(os.path.join(CLAUDE_DIR, '.credentials.json')))
-    for key in ('ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL',
-                'ANTHROPIC_DEFAULT_HAIKU_MODEL'):
-        value = env.get(key)
-        if value and value not in models:
+    # Every model the settings name: the model setting, then each *_MODEL variable.
+    default = settings.get('model') or env.get('ANTHROPIC_MODEL') or ''
+    for value in [default] + [v for k, v in env.items() if k.endswith('_MODEL')]:
+        if isinstance(value, str) and value and value not in models:
             models.append(value)
     base = env.get('ANTHROPIC_BASE_URL', '')
-    return {'models': models, 'defaultModel': env.get('ANTHROPIC_MODEL'), 'baseUrl': base, 'auth': auth,
-            'claudeVersion': claude_version}
+    return {'models': models, 'defaultModel': default, 'baseUrl': base, 'auth': auth,
+            'claudeVersion': claude_version, 'efforts': choices.get('effort', []),
+            'effort': env.get('CLAUDE_CODE_EFFORT_LEVEL') or settings.get('effortLevel') or '',
+            'permissionModes': choices.get('permission-mode', [])}
 
 
 def list_dirs(path):
@@ -933,7 +960,7 @@ def main():
     server.daemon_threads = True
     server.token = args.token
     threading.Thread(target=reaper, daemon=True).start()
-    threading.Thread(target=find_claude_version, daemon=True).start()
+    threading.Thread(target=find_claude_info, daemon=True).start()
     server.serve_forever()
 
 
