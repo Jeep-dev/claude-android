@@ -181,6 +181,23 @@ public class ScreensTest {
             b.input = new JSONObject(n[1]);
             tm.blocks.add(b);
         }
+        String png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAAD2klEQVR4nO3ZMW5UWRBAUUDeCItgLeQTkDp0NsHsgJRgNsQKiNgKgSWL0TCMZZr/6r53TuzurpL6qn7Lr788vH8FNL1ZPQDwcgKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ9jdr7z47V9/32oOONnXP/942QtdYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAh7G71ANzSu48fnvNnn+8//e5JuIaA854Z7X+9RMxpAq56Qbc/fx8lFwk45lbd/uSdlRwi4Izfl+4PP0jGCQIOuCzdf3+ojIfzb6TpltQ75NP5Xy7wXEPicYonc4GHGlLvk2nz8EjAE82sZeZUh/MIPcvwSDxOT+MCDzK83ieVOU8g4ClaVbSm3ZiARyj2UJx5PwKGMAGv1z1l3cm3IeDF6g3U568T8Ep7fPv32CJKwBAm4GV2Olw77dIi4DX2+8bvt1GCgCFMwAvseqx23WsyAUOYgK+295nae7uBBAxhAoYwAV/qhCfME3acQ8AQJmAIE/B1znm2PGfT5QQMYQKGMAFDmIAvctrPwtP2XUXAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBHyRz/efVo9wqdP2XUXAECZgCBMwhAn4Ouf8LDxn0+UEDGEChjABX+qEZ8sTdpxDwBAmYAgT8NX2fsLce7uBBAxhAl5g1zO1616TCRjCBLzGfsdqv40SBLzMTt/4nXZpETCECXilPQ7XHltECXix+re/Pn+dgNfrNtCdfBsChjABj1A8ZcWZ9yPgKVo9tKbdmIAHqVRRmfMEd6sH4B8e23j38cPqQX5MutO4wBPN7GTmVIcT8FDTapk2D488Qs815HFaupO5wNOt7Ue9w7nAAUtOsXQTBJxxWcbSDRFwzFNdNy9Zt0UCrrpVybpNE3De9wU+M2bRbkPAW1HmafwbCcIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIe/3l4f3qGYAXcoEhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAEPYNbUmr08oXlSsAAAAASUVORK5CYII=";
+        Chat.Block pic = new Chat.Block(Chat.Block.TOOL);
+        pic.name = "Read";
+        pic.input = new JSONObject("{\"file_path\":\"/root/work/shot.png\"}");
+        pic.result = "[图片]";
+        pic.images.add(png);
+        tm.blocks.add(0, pic);
+        Chat.Block opened = new Chat.Block(Chat.Block.TOOL);
+        opened.name = "Read";
+        opened.input = new JSONObject("{\"file_path\":\"/root/work/shot.png\"}");
+        opened.result = "[图片]";
+        opened.images.add(png);
+        opened.open = true;
+        tm.blocks.add(1, opened);
+        Chat.Block says = new Chat.Block(Chat.Block.TEXT);
+        says.text = "画好了：\n\n![图](" + png + ")\n\n![没有的](/root/work/none.png)";
+        tm.blocks.add(2, says);
         tm.done = true;
         tools.messages.add(tm);
         Method sw = MainActivity.class.getDeclaredMethod("switchTo", Chat.class);
@@ -188,6 +205,9 @@ public class ScreensTest {
         sw.invoke(a, tools);
         idle();
         shot(root, "10-tools");
+        RecyclerScroll.top(a);
+        idle();
+        shot(root, "10-tools-top");
         sw.invoke(a, chat);
         idle();
 

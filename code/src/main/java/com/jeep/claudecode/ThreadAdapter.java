@@ -220,7 +220,10 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 img.setBackground(Ui.round(Ui.color(c, R.color.surface2), Ui.dp(c, 14), Ui.dp(c, 1), Ui.color(c, R.color.border)));
                 img.setClipToOutline(true);
                 Bitmap bmp = src == null ? null : decode(src);
-                if (bmp != null) img.setImageBitmap(bmp);
+                if (bmp != null) {
+                    img.setImageBitmap(bmp);
+                    img.setOnClickListener(v -> Images.show(c, src, null));
+                }
                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(Ui.dp(c, 112), Ui.dp(c, 112));
                 p.leftMargin = Ui.dp(c, 6);
                 row.addView(img, p);
@@ -465,6 +468,19 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         } else {
             state = Ui.icon(c, b.error ? R.drawable.ic_x : R.drawable.ic_check, 15, b.error ? R.color.danger : R.color.ok);
         }
+        if (!b.images.isEmpty() && !b.open) {
+            // A picture it read: shown small at the end of the row, whole when opened.
+            String src = b.images.get(0);
+            ImageView thumb = new ImageView(c);
+            thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            thumb.setBackground(Ui.round(Ui.color(c, R.color.surface2), Ui.dp(c, 8), Ui.dp(c, 1), Ui.color(c, R.color.border)));
+            thumb.setClipToOutline(true);
+            Bitmap bmp = decode(src);
+            if (bmp != null) thumb.setImageBitmap(bmp);
+            thumb.setOnClickListener(v -> Images.show(c, src, null));
+            head.addView(thumb, new LinearLayout.LayoutParams(Ui.dp(c, 34), Ui.dp(c, 34)));
+            Ui.margins(thumb, c, 8, 0, 0, 0);
+        }
         Ui.margins(state, c, 8, 0, 0, 0);
         head.addView(state);
         head.addView(chevron(b.open));
@@ -494,10 +510,26 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             case "TodoWrite": break;
             default: body.addView(io(b.name, pretty(i), R.color.text2));
         }
-        if (b.result != null && !b.result.isEmpty()) body.addView(io(null, b.result, b.error ? R.color.danger : R.color.text2));
+        for (String src : b.images) body.addView(picture(src));
+        String result = b.result == null ? "" : b.images.isEmpty() ? b.result : b.result.replace("[图片]", "").trim();
+        if (!result.isEmpty()) body.addView(io(null, result, b.error ? R.color.danger : R.color.text2));
         for (int k = 1; k < body.getChildCount(); k++) Ui.margins(body.getChildAt(k), c, 0, 8, 0, 0);
         box.addView(body, Ui.fill());
         Ui.margins(body, c, 32, 6, 0, 8);
+    }
+
+    /** A picture across the row, at most a screen's half high; a tap shows it whole. */
+    private View picture(String src) {
+        ImageView img = new ImageView(c);
+        img.setAdjustViewBounds(true);
+        img.setScaleType(ImageView.ScaleType.FIT_START);
+        img.setMaxHeight(c.getResources().getDisplayMetrics().heightPixels / 2);
+        img.setBackground(Ui.round(Ui.color(c, R.color.surface2), Ui.dp(c, 10), Ui.dp(c, 1), Ui.color(c, R.color.border)));
+        img.setClipToOutline(true);
+        img.setLayoutParams(Ui.wrap());
+        Images.load(img, src, null, c.getResources().getDisplayMetrics().widthPixels, null);
+        img.setOnClickListener(v -> Images.show(c, src, null));
+        return img;
     }
 
     private static String pretty(JSONObject o) {

@@ -138,7 +138,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
         bridge = new Bridge(this, this);
         userland = new Userland(this);
-        md = new Md(talkContext(), this::copy, this::openUrl);
+        md = new Md(talkContext(), this::copy, this::openUrl, this::userFile);
         // The keyboard opens when the box is tapped, never by itself (coming back from the background).
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
                 | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
@@ -496,6 +496,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
         if (stick) scrollToEnd(false);
         updateChrome();
         updateLink();
+    }
+
+    /** A path as Claude Code means it (absolute, ~/…, or from this conversation's folder) as a file here. */
+    private java.io.File userFile(String path) {
+        String p = Uri.decode(path);
+        if (p.startsWith("~/")) p = Userland.HOME + p.substring(1);
+        else if (!p.startsWith("/")) p = (current.cwd == null || current.cwd.isEmpty() ? defaultCwd : current.cwd) + "/" + p;
+        return userland.file(p);
     }
 
     private ImageView jumpButton(int icon) {
@@ -2488,7 +2496,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         Chat chat = current;
         chat.draft = input.getText().toString();
         current = null;
-        md = new Md(talkContext(), this::copy, this::openUrl);
+        md = new Md(talkContext(), this::copy, this::openUrl, this::userFile);
         Themes.window(getWindow(), this);
         build();
         switchTo(chat);

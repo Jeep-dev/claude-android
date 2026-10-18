@@ -486,6 +486,16 @@ def tool_result_text(content):
     return ''
 
 
+def tool_result_images(content):
+    """The images in a tool result (a picture Claude Code read), as data: URLs; very large ones left out."""
+    out = []
+    for b in content if isinstance(content, list) else []:
+        src = b.get('source') if isinstance(b, dict) and b.get('type') == 'image' else None
+        if isinstance(src, dict) and src.get('type') == 'base64' and 0 < len(src.get('data') or '') < 1_500_000:
+            out.append('data:%s;base64,%s' % (src.get('media_type', 'image/png'), src['data']))
+    return out
+
+
 def load_history(session_id):
     path = find_session(session_id)
     if not path:
@@ -525,6 +535,7 @@ def load_history(session_id):
                             tool = tools.get(b.get('tool_use_id'))
                             if tool is not None:
                                 tool['result'] = tool_result_text(b.get('content'))[:20000]
+                                tool['images'] = tool_result_images(b.get('content'))
                                 tool['isError'] = bool(b.get('is_error'))
                                 tool['status'] = 'error' if tool['isError'] else 'done'
                         elif b.get('type') == 'text' and is_prompt_text(b.get('text', '')):

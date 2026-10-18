@@ -41,6 +41,8 @@ final class Chat {
         String title = "";
         // tools
         String toolId, name, partial = "", result;
+        /** Images in the tool's result (a picture Read), as data: URLs. */
+        final List<String> images = new ArrayList<>();
         JSONObject input = new JSONObject();
         boolean running, error;
         // thinking
@@ -115,6 +117,21 @@ final class Chat {
     Msg owner(Block block) {
         for (int i = messages.size() - 1; i >= 0; i--) if (messages.get(i).blocks.contains(block)) return messages.get(i);
         return null;
+    }
+
+    /** The images in a tool result, as data: URLs. */
+    static List<String> resultImages(Object content) {
+        List<String> out = new ArrayList<>();
+        if (!(content instanceof JSONArray)) return out;
+        JSONArray a = (JSONArray) content;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject c = a.optJSONObject(i);
+            JSONObject src = c == null || !"image".equals(c.optString("type")) ? null : c.optJSONObject("source");
+            if (src != null && "base64".equals(src.optString("type")) && !src.optString("data").isEmpty()) {
+                out.add("data:" + src.optString("media_type", "image/png") + ";base64," + src.optString("data"));
+            }
+        }
+        return out;
     }
 
     static String resultText(Object content) {
@@ -281,6 +298,8 @@ final class Chat {
                 Block b = tool(c.optString("tool_use_id"));
                 if (b == null) continue;
                 b.result = resultText(c.opt("content"));
+                b.images.clear();
+                b.images.addAll(resultImages(c.opt("content")));
                 b.error = c.optBoolean("is_error");
                 b.running = false;
                 b.touch();
@@ -358,6 +377,8 @@ final class Chat {
                             b.name = o.optString("name");
                             b.input = o.optJSONObject("input") != null ? o.optJSONObject("input") : new JSONObject();
                             b.result = o.has("result") ? o.optString("result") : null;
+                            JSONArray imgs = o.optJSONArray("images");
+                            for (int n = 0; imgs != null && n < imgs.length(); n++) b.images.add(imgs.optString(n));
                             b.error = o.optBoolean("isError");
                             m.blocks.add(b);
                             break;

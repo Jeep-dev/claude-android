@@ -8,6 +8,7 @@ import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -30,6 +31,8 @@ final class Md {
     private static final Pattern FENCE = Pattern.compile("^\\s*(`{3,}|~{3,})\\s*([^`\\s]*).*$");
     /** A table's second line: |---|:--:| */
     private static final Pattern TABLE_RULE = Pattern.compile("^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-*:?\\s*)*\\|?\\s*$");
+    /** A line that is only a picture: ![alt](where "title") */
+    private static final Pattern IMAGE = Pattern.compile("^\\s*!\\[([^\\]]*)\\]\\(\\s*<?([^)>\\s]+)>?(?:\\s+[\"'][^\"']*[\"'])?\\s*\\)\\s*$");
 
     private final Context c;
     private Markwon markwon;
@@ -37,11 +40,14 @@ final class Md {
     private int fontGen;
     private final Consumer<String> copy;
     private final Consumer<String> openLink;
+    /** A picture's path in the userland (absolute, ~/…, or from the conversation's folder) as a file. */
+    private final java.util.function.Function<String, java.io.File> files;
 
-    Md(Context c, Consumer<String> copy, Consumer<String> openLink) {
+    Md(Context c, Consumer<String> copy, Consumer<String> openLink, java.util.function.Function<String, java.io.File> files) {
         this.c = c;
         this.copy = copy;
         this.openLink = openLink;
+        this.files = files;
         markwon = build();
     }
 
@@ -96,6 +102,13 @@ final class Md {
         StringBuilder prose = new StringBuilder();
         String[] lines = text.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
+            Matcher picture = lines[i].contains("![") ? IMAGE.matcher(lines[i]) : null;
+            if (picture != null && picture.matches()) {
+                if (prose.toString().trim().length() > 0) out.add(new String[]{"text", prose.toString()});
+                prose.setLength(0);
+                out.add(new String[]{"image", picture.group(2), picture.group(1)});
+                continue;
+            }
             if (lines[i].contains("|") && i + 1 < lines.length && lines[i + 1].contains("-")
                     && TABLE_RULE.matcher(lines[i + 1]).matches()) {
                 StringBuilder table = new StringBuilder(lines[i]).append('\n').append(lines[i + 1]);
@@ -142,11 +155,13 @@ final class Md {
             if (old != null && p[0].equals(old.getTag())) {
                 if ("code".equals(p[0])) updateCode(old, p[1], p[2]);
                 else if ("table".equals(p[0])) fillTable(old, p[1]);
+                else if ("image".equals(p[0])) { if (!p[1].equals(old.getTag(R.id.markdown))) { box.removeViewAt(i); box.addView(picture(p[1], p[2]), i); } }
                 else setProse((TextView) old, p[1]);
                 continue;
             }
             while (box.getChildCount() > i) box.removeViewAt(i);
-            View v = "code".equals(p[0]) ? code(p[1], p[2]) : "table".equals(p[0]) ? table(p[1]) : prose(p[1]);
+            View v = "code".equals(p[0]) ? code(p[1], p[2]) : "table".equals(p[0]) ? table(p[1])
+                    : "image".equals(p[0]) ? picture(p[1], p[2]) : prose(p[1]);
             if (i > 0) Ui.margins(v, c, 0, 14, 0, 0);
             box.addView(v);
         }
@@ -263,6 +278,33 @@ final class Md {
         List<String> out = new ArrayList<>();
         for (String cell : s.split("(?<!\\\\)\\|", -1)) out.add(cell.trim().replace("\\|", "|"));
         return out;
+    }
+
+    /** A picture in the reply: a file Claude made or a web address; a tap shows it whole. */
+    private View picture(String where, String alt) {
+        LinearLayout box = Ui.column(c);
+        box.setTag("image");
+        box.setTag(R.id.markdown, where);
+        box.setLayoutParams(Ui.fill());
+        boolean remote = where.startsWith("http://") || where.startsWith("https://") || where.startsWith("data:");
+        java.io.File file = remote ? null : files.apply(where.startsWith("file://") ? where.substring(7) : where);
+        String src = remote ? where : null;
+        ImageView img = new ImageView(c);
+        img.setAdjustViewBounds(true);
+        img.setScaleType(ImageView.ScaleType.FIT_START);
+        img.setMaxHeight((int) (c.getResources().getDisplayMetrics().heightPixels * 0.6f));
+        img.setBackground(Ui.round(Ui.color(c, R.color.surface2), Ui.dp(c, 12), Ui.dp(c, 1), Ui.color(c, R.color.border)));
+        img.setClipToOutline(true);
+        img.setContentDescription(alt);
+        img.setOnClickListener(v -> Images.show(c, src, file));
+        box.addView(img, Ui.wrap());
+        Images.load(img, src, file, c.getResources().getDisplayMetrics().widthPixels, () -> {
+            box.removeAllViews();
+            TextView t = Ui.text(c, "图片打不开：" + where, 13, R.color.text3);
+            t.setTypeface(Ui.MONO);
+            box.addView(t);
+        });
+        return box;
     }
 
     private void updateCode(View card, String code, String lang) {
