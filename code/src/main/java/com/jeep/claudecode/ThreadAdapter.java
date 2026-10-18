@@ -78,7 +78,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
     /** Rebuilds the rows for the chat and updates only what changed. */
     void show(Chat chat, boolean reset) {
         this.chat = chat;
-        List<Item> next = flatten(chat);
+        List<Item> next = flatten(chat, Themes.showThinking(c));
         if (reset) {
             items = next;
             notifyDataSetChanged();
@@ -97,7 +97,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         diff.dispatchUpdatesTo(this);
     }
 
-    private static List<Item> flatten(Chat chat) {
+    private static List<Item> flatten(Chat chat, boolean thinking) {
         List<Item> out = new ArrayList<>();
         List<Chat.Msg> msgs = chat.messages;
         for (int i = 0; i < msgs.size(); i++) {
@@ -112,6 +112,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 for (Chat.Block b : m.blocks) {
                     // The model may send a thinking block with nothing in it: once it ends, there is nothing to show.
                     if (b.kind == Chat.Block.THINKING && !b.streaming && b.text.trim().isEmpty()) continue;
+                    // Thinking can be left out altogether (a setting), whatever the model.
+                    if (b.kind == Chat.Block.THINKING && !thinking) continue;
                     // Thinking in progress is the status row's "思考中… Ns"; tapping that opens it here.
                     if (b.kind == Chat.Block.THINKING && b.streaming && !b.open) continue;
                     int type = b.kind == Chat.Block.TEXT ? TEXT : b.kind == Chat.Block.THINKING ? THINKING

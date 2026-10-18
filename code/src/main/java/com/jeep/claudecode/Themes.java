@@ -78,6 +78,15 @@ final class Themes {
         return c.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("title", false);
     }
 
+    /** The model's thinking as rows in the conversation (on by default). */
+    static boolean showThinking(Context c) {
+        return c.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("thinking", true);
+    }
+
+    static void setShowThinking(Context c, boolean on) {
+        c.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("thinking", on).apply();
+    }
+
     static void setShowTitle(Context c, boolean on) {
         c.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("title", on).apply();
     }

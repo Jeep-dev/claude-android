@@ -2163,6 +2163,16 @@ public final class MainActivity extends Activity implements Bridge.Events {
             restyle();
         }));
         themes.addView(titled, Ui.fill());
+        LinearLayout thought = Ui.row(this);
+        thought.setPadding(dp(14), dp(6), dp(8), dp(6));
+        thought.setMinimumHeight(dp(50));
+        thought.addView(Ui.text(this, "思考", 15.5f, R.color.text), new LinearLayout.LayoutParams(0, -2, 1));
+        thought.addView(segmented(new String[]{"关", "开"}, Themes.showThinking(this) ? 1 : 0, i -> {
+            Themes.setShowThinking(this, i == 1);
+            fillSettings(launchCache);
+            renderNow();
+        }));
+        themes.addView(thought, Ui.fill());
         option(text, 0, "中文字体", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
         option(text, 0, "英文字体", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
     }

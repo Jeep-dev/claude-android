@@ -226,6 +226,15 @@ public class ScreensTest {
         RecyclerScroll.top(a);
         idle();
         shot(root, "10-tools-top");
+        Themes.setShowThinking(a, false);
+        call(a, "renderNow");
+        idle();
+        RecyclerScroll.top(a);
+        idle();
+        shot(root, "10-tools-nothinking");
+        Themes.setShowThinking(a, true);
+        call(a, "renderNow");
+        idle();
         sw.invoke(a, chat);
         idle();
 
