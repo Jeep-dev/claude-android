@@ -111,7 +111,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private RecyclerView list;
     private ThreadAdapter adapter;
     private ScrollView emptyView;
-    private ImageView toTop, toBottom, sendBtn;
+    private View toTop, toBottom;
+    private ImageView sendBtn;
     /** The jump to the top and to the end: shown while the list is scrolled by hand, then hidden. */
     private LinearLayout jump;
     private EditText input;
@@ -347,7 +348,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
         topButtons = Ui.row(this);
         topButtons.setPadding(dp(14), 0, dp(14), 0);
-        Glass.Pane menu = glassButton(R.drawable.ic_sidebar);
+        Glass.Pane menu = glassButton(R.drawable.ic_sidebar, 21);
         menu.setOnClickListener(v -> frame.open());
         topButtons.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(44)));
         topButtons.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
@@ -362,7 +363,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             topButtons.addView(pill, new LinearLayout.LayoutParams(-2, dp(44)));
             topButtons.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         }
-        Glass.Pane terminal = glassButton(R.drawable.ic_terminal);
+        Glass.Pane terminal = glassButton(R.drawable.ic_terminal, 21);
         terminal.setOnClickListener(v -> openTerminal(null));
         topButtons.addView(terminal, new LinearLayout.LayoutParams(dp(44), dp(44)));
         host.addView(topButtons, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
@@ -391,11 +392,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return host;
     }
 
-    private Glass.Pane glassButton(int icon) {
+    private Glass.Pane glassButton(int icon, int iconDp) {
         Glass.Pane b = new Glass.Pane(this, host, -1, col(R.color.bg), Glass.alpha(col(R.color.surface), 0.55f),
                 Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
         b.setGravity(Gravity.CENTER);
-        b.addView(Ui.icon(this, icon, 21, R.color.text2));
+        b.addView(Ui.icon(this, icon, iconDp, R.color.text2));
         return b;
     }
 
@@ -662,7 +663,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return userland.file(p);
     }
 
-    private ImageView jumpButton(int icon) {
+    private View jumpButton(int icon) {
+        if (immersive) return glassButton(icon, 18);
         ImageView b = Ui.iconButton(this, icon, 36, 18, R.color.text2);
         b.setBackground(Ui.press(this, Ui.round(col(R.color.surface), dp(18), dp(1), col(R.color.border)), dp(18)));
         b.setElevation(dp(3));
@@ -706,8 +708,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
             if (!stick || list.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING) return;
             int count = adapter.getItemCount();
             if (count == 0) return;
-            if (smooth) list.smoothScrollToPosition(count - 1);
-            else ((LinearLayoutManager) list.getLayoutManager()).scrollToPositionWithOffset(count - 1, -100000);
+            LinearLayoutManager lm = (LinearLayoutManager) list.getLayoutManager();
+            if (!smooth) { lm.scrollToPositionWithOffset(count - 1, -100000); return; }
+            // From far up, most of the way at once (as to the top): a smooth scroll through it all takes too long.
+            if (lm.findLastVisibleItemPosition() < count - 7) lm.scrollToPosition(count - 7);
+            list.post(() -> list.smoothScrollToPosition(count - 1));
         });
     }
 
