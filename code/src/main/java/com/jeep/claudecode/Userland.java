@@ -27,12 +27,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.IntConsumer;
+import java.util.function.Consumer;
 
 /**
  * The Linux userland Claude Code runs in, inside this app: Alpine (with Claude Code, Python and
- * git) unpacked from assets/runtime/rootfs.tar.xz, run under Termux's proot. Built by
- * code/runtime/*.sh in CI.
+ * git) run under Termux's proot. Built by code/runtime/*.sh in CI; proot comes in the APK, the
+ * userland (rootfs.tar.xz) is downloaded from where CI published it (assets/runtime/rootfs.url),
+ * once per userland, unless the APK carries it (a build of its own).
  */
 final class Userland {
     static final String HOME = "/root";
@@ -72,11 +73,22 @@ final class Userland {
         }
     }
 
-    /** Unpacks proot and the userland over what is there (files in /root and installed packages stay). */
-    void install(IntConsumer percent) throws IOException {
+    /**
+     * Unpacks proot and the userland over what is there (files in /root and installed packages
+     * stay), downloading the userland first when the APK does not carry it. Tells how far it is.
+     */
+    void install(Consumer<String> status) throws IOException {
         String id = bundled();
         if (id == null) throw new IOException("这个安装包里没有运行环境");
         AssetManager assets = context.getAssets();
+        boolean inApk;
+        try (InputStream ignored = assets.open("runtime/rootfs.tar.xz")) {
+            inApk = true;
+        } catch (IOException e) {
+            inApk = false;
+        }
+        File download = new File(base, "rootfs-" + id + ".tar.xz");
+        if (!inApk) fetch(read(assets.open("runtime/rootfs.url")).trim(), read(assets.open("runtime/rootfs.sha256")).trim(), download, status);
         mkdirs(bin);
         mkdirs(tmp);
         for (String name : PROOT_FILES) {
@@ -88,16 +100,17 @@ final class Userland {
             chmod(f, 0700);
         }
         marker().delete();
-        long total = assets.openFd("runtime/rootfs.tar.xz").getLength();
+        long total = inApk ? assets.openFd("runtime/rootfs.tar.xz").getLength() : download.length();
         long[] done = {0};
         int[] shown = {-1};
-        InputStream raw = new FilterInputStream(assets.open("runtime/rootfs.tar.xz", AssetManager.ACCESS_STREAMING)) {
+        InputStream source = inApk ? assets.open("runtime/rootfs.tar.xz", AssetManager.ACCESS_STREAMING) : new FileInputStream(download);
+        InputStream raw = new FilterInputStream(source) {
             @Override public int read(byte[] b, int off, int len) throws IOException {
                 int n = super.read(b, off, len);
                 if (n > 0) {
                     done[0] += n;
                     int p = (int) (done[0] * 100 / Math.max(1, total));
-                    if (p != shown[0]) { shown[0] = p; percent.accept(p); }
+                    if (p != shown[0]) { shown[0] = p; status.accept("解压 " + p + "%"); }
                 }
                 return n;
             }
@@ -105,10 +118,92 @@ final class Userland {
         try (InputStream in = new BufferedInputStream(new XZInputStream(new BufferedInputStream(raw, 1 << 16)), 1 << 16)) {
             untar(in, rootfs);
         }
+        download.delete();
         mkdirs(new File(rootfs, "root/work"));
         mkdirs(new File(rootfs, "opt/ccapp"));
         try (OutputStream out = new FileOutputStream(marker())) {
             out.write(id.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * Downloads the userland to the file, going on from what an earlier try left there, and checks
+     * it against its SHA-256; a file that does not match is deleted, to start over next time.
+     */
+    private void fetch(String url, String sha256, File to, Consumer<String> status) throws IOException {
+        // Another userland's download, left from before, is of no use now.
+        File[] old = base.listFiles((d, n) -> n.startsWith("rootfs-") && n.endsWith(".tar.xz") && !n.equals(to.getName()));
+        if (old != null) for (File f : old) f.delete();
+        // A connection that drops is taken up again where it stopped, a few times before giving up.
+        for (int attempt = 1; ; attempt++) {
+            try {
+                if (fetchRest(url, to, status)) break;
+                throw new IOException("下载中断");
+            } catch (IOException e) {
+                if (attempt >= 5) throw new IOException("下载运行环境失败：" + e.getMessage(), e);
+                status.accept("网络断了，正在重连…");
+                try { Thread.sleep(2000L * attempt); } catch (InterruptedException i) { throw new IOException("已取消"); }
+            }
+        }
+        status.accept("校验…");
+        if (!sha256.equalsIgnoreCase(sha256(to))) {
+            to.delete();
+            throw new IOException("下载的运行环境不完整，请重试");
+        }
+    }
+
+    /** Downloads what the file lacks; true when it is all there. */
+    private static boolean fetchRest(String url, File to, Consumer<String> status) throws IOException {
+        for (int redirects = 0; ; redirects++) {
+            long have = to.length();
+            java.net.HttpURLConnection http = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            http.setConnectTimeout(20_000);
+            http.setReadTimeout(30_000);
+            http.setInstanceFollowRedirects(false);
+            if (have > 0) http.setRequestProperty("Range", "bytes=" + have + "-");
+            try {
+                int code = http.getResponseCode();
+                if (code / 100 == 3 && redirects < 5) {
+                    // GitHub sends release files from another host; followed here, keeping the range.
+                    url = new java.net.URL(new java.net.URL(url), http.getHeaderField("Location")).toString();
+                    continue;
+                }
+                if (code == 416) return true; // all of it is here already
+                if (code != 200 && code != 206) throw new IOException("HTTP " + code);
+                boolean resumed = code == 206;
+                long length = http.getContentLengthLong();
+                long total = length < 0 ? -1 : (resumed ? have : 0) + length;
+                long done = resumed ? have : 0;
+                int shown = -1;
+                try (InputStream in = http.getInputStream(); OutputStream out = new FileOutputStream(to, resumed)) {
+                    byte[] buf = new byte[1 << 16];
+                    for (int n; (n = in.read(buf)) > 0; ) {
+                        out.write(buf, 0, n);
+                        done += n;
+                        int p = total > 0 ? (int) (done * 100 / total) : 0;
+                        if (p != shown) {
+                            shown = p;
+                            status.accept(String.format(java.util.Locale.ROOT, "下载 %d%% · %.0f / %.0f MB", p, done / 1048576.0, total / 1048576.0));
+                        }
+                    }
+                }
+                return total < 0 || done >= total;
+            } finally {
+                http.disconnect();
+            }
+        }
+    }
+
+    private static String sha256(File f) throws IOException {
+        try (InputStream in = new FileInputStream(f)) {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[1 << 16];
+            for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
+            StringBuilder hex = new StringBuilder();
+            for (byte b : md.digest()) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException(e);
         }
     }
 

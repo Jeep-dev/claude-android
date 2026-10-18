@@ -81,7 +81,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private double bridgeStarted;
     private String setup; // why the bridge cannot be reached ("install" while the userland unpacks), or null
     private boolean installing;
-    private int installPercent;
+    /** How far preparing the userland is (downloading, unpacking). */
+    private String installStatus = "";
     private String installError = "";
     /** Claude Code has an API key or login to use; assumed until the bridge says otherwise. */
     private boolean authSet = true;
@@ -643,13 +644,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
         mark.setImageResource(R.drawable.mascot);
         box.addView(mark, new LinearLayout.LayoutParams(dp(54), dp(33)));
         boolean busy = "install".equals(setup);
-        TextView h = Ui.text(this, busy ? "正在准备运行环境" : "Claude Code 没能启动", 26, R.color.text);
+        TextView h = Ui.text(this, busy ? "正在准备运行环境" : "installFailed".equals(setup) ? "运行环境没准备好" : "Claude Code 没能启动", 26, R.color.text);
         h.setTypeface(Ui.SERIF);
         h.setPadding(0, dp(16), 0, dp(8));
         box.addView(h);
         String why;
-        if (busy) why = "第一次打开或更新后，要把 Claude Code 和它的 Linux 环境解压到手机上，大约半分钟到一分钟。\n\n" + installPercent + "%";
-        else if ("installFailed".equals(setup)) why = "解压运行环境失败：" + installError;
+        if (busy) why = installStatus.isEmpty() ? "…" : installStatus;
+        else if ("installFailed".equals(setup)) why = installError;
         else why = "后台 30 秒内没有起来。可以重试，或者在设置里看运行日志。";
         TextView p = Ui.text(this, why, 15, R.color.text2);
         p.setLineSpacing(0, 1.25f);
@@ -673,14 +674,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
         if (installing) return;
         installing = true;
         setup = "install";
-        installPercent = 0;
+        installStatus = "";
         linked = false;
         renderNow();
         work.execute(() -> {
             String error = null;
             try {
                 userland.install(p -> ui.post(() -> {
-                    installPercent = p;
+                    installStatus = p;
                     if ("install".equals(setup) && emptyView.getVisibility() == View.VISIBLE) fillEmpty();
                 }));
             } catch (Exception e) {

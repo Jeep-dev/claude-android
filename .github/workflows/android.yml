@@ -27,11 +27,23 @@ jobs:
           mkdir -p userland
           sudo code/runtime/build-rootfs.sh aarch64 userland/rootfs.tar.xz
           code/runtime/fetch-proot.sh userland
-      - name: Put the userland in the app
+      - name: Publish the userland (once per userland)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="runtime-$RUNTIME_ID"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" userland/rootfs.tar.xz --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --prerelease --title "Claude Code app userland $RUNTIME_ID" \
+              --notes "Alpine with Claude Code, downloaded by the Claude Code app on first launch."
+          fi
+      - name: Put proot and the userland's address in the app
         run: |
           mkdir -p code/src/main/assets/runtime
-          cp userland/* code/src/main/assets/runtime/
+          for f in userland/*; do [ "$(basename "$f")" = rootfs.tar.xz ] || cp "$f" code/src/main/assets/runtime/; done
           echo "$RUNTIME_ID" > code/src/main/assets/runtime/id
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/runtime-$RUNTIME_ID/rootfs.tar.xz" > code/src/main/assets/runtime/rootfs.url
+          sha256sum userland/rootfs.tar.xz | cut -d' ' -f1 > code/src/main/assets/runtime/rootfs.sha256
           ls -l code/src/main/assets/runtime
       - uses: actions/setup-java@v4
         with:
