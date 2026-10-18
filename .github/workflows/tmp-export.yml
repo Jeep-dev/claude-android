@@ -1,0 +1,36 @@
+name: TMP export signing material (delete me)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bundle and encrypt
+        env:
+          KEY_B64: ${{ secrets.CLAUDE_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.CLAUDE_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.CLAUDE_KEY_PASSWORD }}
+          PASSPHRASE: ${{ secrets.TMP_EXPORT_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$KEY_B64" && test -n "$KS_PASS" && test -n "$KEY_PASS" && test -n "$PASSPHRASE"
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/signing/app.jks"
+          printf '%s' "$KS_PASS" > "$RUNNER_TEMP/signing/keystore_password"
+          printf '%s' "$KEY_PASS" > "$RUNNER_TEMP/signing/key_password"
+          tar -C "$RUNNER_TEMP/signing" -czf "$RUNNER_TEMP/signing.tar.gz" app.jks keystore_password key_password
+          openssl enc -aes-256-cbc -pbkdf2 -iter 300000 -salt \
+            -in "$RUNNER_TEMP/signing.tar.gz" \
+            -out "$RUNNER_TEMP/signing.tar.gz.enc" \
+            -pass env:PASSPHRASE
+          rm -rf "$RUNNER_TEMP/signing" "$RUNNER_TEMP/signing.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signing-export
+          path: ${{ runner.temp }}/signing.tar.gz.enc
+          retention-days: 1
+          if-no-files-found: error
