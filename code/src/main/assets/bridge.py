@@ -22,7 +22,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 15  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 16  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -417,6 +417,59 @@ def list_sessions():
     return items[:300]
 
 
+_text_cache = {}
+
+
+def session_text(path):
+    """What was said in a session (the prompts and the replies' text), for search."""
+    st = os.stat(path)
+    cached = _text_cache.get(path)
+    if cached and cached[0] == st.st_mtime:
+        return cached[1]
+    parts = []
+    with open(path, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if '"user"' not in line and '"assistant"' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(e, dict) or e.get('isSidechain') or e.get('isMeta'):
+                continue
+            content = (e.get('message') or {}).get('content')
+            if e.get('type') == 'user':
+                text = entry_text(content)
+                if is_prompt_text(text):
+                    parts.append(text)
+            elif e.get('type') == 'assistant' and isinstance(content, list):
+                parts.extend(b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text')
+    text = '\n'.join(parts)
+    _text_cache[path] = (st.st_mtime, text)
+    return text
+
+
+def search_sessions(query):
+    """Sessions whose conversation contains the words, with the text around the first match."""
+    q = ' '.join(query.lower().split())
+    out = []
+    if not q:
+        return out
+    for path in session_files():
+        try:
+            text = session_text(path)
+        except OSError:
+            continue
+        flat = ' '.join(text.split())
+        i = flat.lower().find(q)
+        if i < 0:
+            continue
+        start = max(0, i - 16)
+        out.append({'id': os.path.basename(path)[:-6],
+                    'snippet': ('…' if start else '') + flat[start:i + len(q) + 60]})
+    return out
+
+
 def tool_result_text(content):
     if isinstance(content, str):
         return content
@@ -631,6 +684,8 @@ class Handler(BaseHTTPRequestHandler):
             self.events(int(q.get('since') or 0))
         elif url.path == '/sessions':
             self.reply(200, {'sessions': list_sessions()})
+        elif url.path == '/search':
+            self.reply(200, {'results': search_sessions(q.get('q', ''))})
         elif url.path == '/history':
             data = load_history(q.get('id', ''))
             self.reply(200 if data else 404, data or {'error': 'not found'})

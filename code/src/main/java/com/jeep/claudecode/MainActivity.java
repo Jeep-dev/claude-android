@@ -97,6 +97,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private Chat current;
     private boolean stick = true;
     private String search = "";
+    /** For the search in the drawer: sessions whose conversation has the words, with that text. */
+    private final Map<String, String> hits = new HashMap<>();
+    private final Runnable searchText = this::searchText;
 
     // views
     private DrawerFrame frame;
@@ -420,7 +423,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
         searchInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(Editable s) { search = s.toString(); renderSessions(); }
+            @Override public void afterTextChanged(Editable s) {
+                search = s.toString();
+                hits.clear();
+                renderSessions();
+                ui.removeCallbacks(searchText);
+                if (!search.trim().isEmpty()) ui.postDelayed(searchText, 250);
+            }
         });
         searchBox.addView(searchInput, Ui.weight());
         d.addView(searchBox, new LinearLayout.LayoutParams(-1, dp(38)));
@@ -725,6 +734,22 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
     }
 
+    /** Asks the bridge which conversations contain the words being searched for. */
+    private void searchText() {
+        String q = search.trim();
+        if (q.isEmpty() || !linked) return;
+        bridge.get("/search?q=" + Uri.encode(q), (status, data) -> {
+            if (!q.equals(search.trim()) || status != 200) return;
+            hits.clear();
+            JSONArray a = data.optJSONArray("results");
+            for (int i = 0; a != null && i < a.length(); i++) {
+                JSONObject r = a.optJSONObject(i);
+                if (r != null) hits.put(r.optString("id"), r.optString("snippet"));
+            }
+            renderSessions();
+        });
+    }
+
     private static String group(double mtime) {
         Calendar start = Calendar.getInstance();
         start.set(Calendar.HOUR_OF_DAY, 0);
@@ -755,7 +780,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
         for (JSONObject s : ordered) {
             String titleText = s.optString("title"), folder = s.optString("cwd"), id = s.optString("id");
-            if (!q.isEmpty() && !titleText.toLowerCase(Locale.ROOT).contains(q) && !folder.toLowerCase(Locale.ROOT).contains(q)) continue;
+            boolean byName = titleText.toLowerCase(Locale.ROOT).contains(q) || folder.toLowerCase(Locale.ROOT).contains(q);
+            if (!q.isEmpty() && !byName && !hits.containsKey(id)) continue;
             String g = pins.contains(id) ? "置顶" : group(s.optDouble("mtime"));
             if (!g.equals(group)) {
                 group = g;
@@ -785,6 +811,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
             TextView meta = Ui.text(this, Ui.base(folder), 12.5f, R.color.text3);
             meta.setPadding(0, dp(3), 0, 0);
             meta.setSingleLine(true);
+            if (!q.isEmpty() && !byName) { // found in what was said: show where
+                String snip = hits.get(id);
+                SpannableStringBuilder sb = new SpannableStringBuilder(snip);
+                int at = snip.toLowerCase(Locale.ROOT).indexOf(q);
+                if (at >= 0) sb.setSpan(new ForegroundColorSpan(col(R.color.text)), at, at + q.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                meta.setText(sb);
+                meta.setEllipsize(TextUtils.TruncateAt.END);
+            }
             item.addView(meta);
             item.setOnClickListener(v -> openSession(id, titleText, folder));
             item.setOnLongClickListener(v -> { sessionActions(id, titleText, folder); return true; });

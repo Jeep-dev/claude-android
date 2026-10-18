@@ -112,13 +112,11 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                 for (Chat.Block b : m.blocks) {
                     // The model may send a thinking block with nothing in it: once it ends, there is nothing to show.
                     if (b.kind == Chat.Block.THINKING && !b.streaming && b.text.trim().isEmpty()) continue;
-                    // Thinking in progress is the status row's "思考中… Ns"; tapping that opens it here.
-                    if (b.kind == Chat.Block.THINKING && b.streaming && !b.open) continue;
                     int type = b.kind == Chat.Block.TEXT ? TEXT : b.kind == Chat.Block.THINKING ? THINKING
                             : b.kind == Chat.Block.TOOL ? TOOL : b.kind == Chat.Block.ERROR ? ERROR : STOPPED;
                     int gap = prev == null ? (out.isEmpty() ? 6 : 20)
                             : prev.kind == Chat.Block.TOOL && b.kind == Chat.Block.TOOL ? 2 : 14;
-                    long sig = ((long) b.version << 1) | (b.open ? 1 : 0);
+                    long sig = ((long) b.version << 1) | (shown(b) ? 1 : 0);
                     out.add(new Item(type, b.id, sig, m, b, gap));
                     prev = b;
                     text |= b.kind == Chat.Block.TEXT;
@@ -174,7 +172,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             md.render(h.box, it.block.text);
             return;
         }
-        if (same && it.type == THINKING && h.thinkOpen == it.block.open) { // same: no rebuild, no jump
+        if (same && it.type == THINKING && h.thinkOpen == shown(it.block)) { // same: no rebuild, no jump
             h.box.setPadding(0, Ui.dp(c, it.gap), 0, 0);
             h.thinkLabel.setText(thinkingLabel(it.block));
             if (h.thinkBody != null && !it.block.text.contentEquals(h.thinkBody.getText())) {
@@ -359,8 +357,14 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         return v;
     }
 
+    /** Whether a block's body shows: as toggled by hand, else thinking while it streams. */
+    static boolean shown(Chat.Block b) {
+        return b.toggled ? b.open : b.kind == Chat.Block.THINKING ? b.streaming : b.open;
+    }
+
     private void toggle(Chat.Block b, View row) {
-        b.open = !b.open;
+        b.open = !shown(b);
+        b.toggled = true;
         changed.accept(row);
     }
 
@@ -373,16 +377,18 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         LinearLayout head = head(R.drawable.ic_brain, false);
         TextView t = Ui.text(c, thinkingLabel(b), 14.5f, R.color.text2);
         h.thinkLabel = t;
-        h.thinkOpen = b.open;
+        boolean open = shown(b);
+        h.thinkOpen = open;
         h.thinkBody = null;
         h.thinkScroll = null;
         t.setPadding(Ui.dp(c, 9), 0, 0, 0);
         head.addView(t, Ui.weight());
-        head.addView(chevron(b.open));
+        head.addView(chevron(open));
         head.setOnClickListener(v -> toggle(b, (View) v.getParent()));
         box.addView(head);
-        if (!b.open) return;
-        MaxScroll scroll = new MaxScroll(c, Ui.dp(c, 300));
+        if (!open) return;
+        // While it streams, a short box following the end; opened afterwards, room to read.
+        MaxScroll scroll = new MaxScroll(c, Ui.dp(c, b.streaming && !b.toggled ? 160 : 300));
         TextView body = Ui.text(c, b.text, 14.5f, R.color.text2);
         body.setLineSpacing(0, 1.35f);
         body.setTextIsSelectable(true);

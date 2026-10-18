@@ -28,6 +28,8 @@ import io.noties.markwon.linkify.LinkifyPlugin;
 /** Markdown in native views: prose through Markwon, fenced code as cards with a copy button. */
 final class Md {
     private static final Pattern FENCE = Pattern.compile("^\\s*(`{3,}|~{3,})\\s*([^`\\s]*).*$");
+    /** A table's second line: |---|:--:| */
+    private static final Pattern TABLE_RULE = Pattern.compile("^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-*:?\\s*)*\\|?\\s*$");
 
     private final Context c;
     private final Markwon markwon;
@@ -72,12 +74,27 @@ final class Md {
                 .build();
     }
 
-    /** Text and code segments of a reply; an unclosed fence (still streaming) is code. */
+    /**
+     * Text, code and table segments of a reply; an unclosed fence (still streaming) is code.
+     * Tables are views of their own: Markwon's measure their rows after drawing, so a table being
+     * streamed changed height on every update and shook the list.
+     */
     static List<String[]> split(String text) {
         List<String[]> out = new ArrayList<>();
         StringBuilder prose = new StringBuilder();
         String[] lines = text.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains("|") && i + 1 < lines.length && lines[i + 1].contains("-")
+                    && TABLE_RULE.matcher(lines[i + 1]).matches()) {
+                StringBuilder table = new StringBuilder(lines[i]).append('\n').append(lines[i + 1]);
+                int j = i + 2;
+                for (; j < lines.length && lines[j].contains("|") && !lines[j].trim().isEmpty(); j++) table.append('\n').append(lines[j]);
+                if (prose.toString().trim().length() > 0) out.add(new String[]{"text", prose.toString()});
+                prose.setLength(0);
+                out.add(new String[]{"table", table.toString()});
+                i = j - 1;
+                continue;
+            }
             Matcher m = FENCE.matcher(lines[i]);
             if (!m.matches()) {
                 prose.append(lines[i]).append('\n');
@@ -112,11 +129,12 @@ final class Md {
             View old = i < box.getChildCount() ? box.getChildAt(i) : null;
             if (old != null && p[0].equals(old.getTag())) {
                 if ("code".equals(p[0])) updateCode(old, p[1], p[2]);
+                else if ("table".equals(p[0])) fillTable(old, p[1]);
                 else setProse((TextView) old, p[1]);
                 continue;
             }
             while (box.getChildCount() > i) box.removeViewAt(i);
-            View v = "code".equals(p[0]) ? code(p[1], p[2]) : prose(p[1]);
+            View v = "code".equals(p[0]) ? code(p[1], p[2]) : "table".equals(p[0]) ? table(p[1]) : prose(p[1]);
             if (i > 0) Ui.margins(v, c, 0, 14, 0, 0);
             box.addView(v);
         }
@@ -152,6 +170,84 @@ final class Md {
                 }
             });
         }
+    }
+
+    private View table(String markdown) {
+        HorizontalScrollView scroll = new HorizontalScrollView(c);
+        scroll.setTag("table");
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setFillViewport(true);
+        scroll.setLayoutParams(Ui.fill());
+        android.widget.TableLayout t = new android.widget.TableLayout(c);
+        t.setStretchAllColumns(true);
+        t.setBackgroundColor(Ui.color(c, R.color.border));
+        int line = Math.max(1, Ui.dp(c, 1));
+        t.setPadding(line, line, 0, 0);
+        scroll.addView(t, new android.widget.FrameLayout.LayoutParams(-1, -2));
+        fillTable(scroll, markdown);
+        return scroll;
+    }
+
+    /** Rows of cells, each measured as it is laid out: the same height on every update. */
+    private void fillTable(View scroll, String markdown) {
+        if (markdown.equals(scroll.getTag(R.id.markdown))) return;
+        scroll.setTag(R.id.markdown, markdown);
+        android.widget.TableLayout t = (android.widget.TableLayout) ((android.view.ViewGroup) scroll).getChildAt(0);
+        String[] lines = markdown.split("\n");
+        List<String> aligns = cells(lines[1]);
+        int line = Math.max(1, Ui.dp(c, 1));
+        int maxCell = (int) (c.getResources().getDisplayMetrics().widthPixels * 0.7f);
+        int r = 0;
+        for (int i = 0; i < lines.length; i++) {
+            if (i == 1) continue;
+            List<String> cells = cells(lines[i]);
+            android.widget.TableRow row = r < t.getChildCount() ? (android.widget.TableRow) t.getChildAt(r) : null;
+            if (row == null) {
+                row = new android.widget.TableRow(c);
+                t.addView(row);
+            }
+            int n = Math.max(cells.size(), aligns.size());
+            for (int k = 0; k < n; k++) {
+                TextView cell = k < row.getChildCount() ? (TextView) row.getChildAt(k) : null;
+                if (cell == null) {
+                    cell = new TextView(c);
+                    cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+                    cell.setTextColor(Ui.color(c, R.color.text));
+                    cell.setLineSpacing(0, 1.2f);
+                    cell.setMaxWidth(maxCell);
+                    cell.setPadding(Ui.dp(c, 10), Ui.dp(c, 7), Ui.dp(c, 10), Ui.dp(c, 7));
+                    cell.setBackgroundColor(Ui.color(c, i == 0 ? R.color.surface2 : R.color.bg));
+                    if (i == 0) cell.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                    android.widget.TableRow.LayoutParams lp = new android.widget.TableRow.LayoutParams(-2, -1);
+                    lp.setMargins(0, 0, line, line);
+                    row.addView(cell, lp);
+                }
+                String a = k < aligns.size() ? aligns.get(k) : "";
+                cell.setGravity(a.startsWith(":") && a.endsWith(":") ? android.view.Gravity.CENTER_HORIZONTAL
+                        : a.endsWith(":") ? android.view.Gravity.END : android.view.Gravity.START);
+                String md = k < cells.size() ? cells.get(k) : "";
+                if (!md.equals(cell.getTag(R.id.markdown))) {
+                    cell.setTag(R.id.markdown, md);
+                    CharSequence styled = markwon.toMarkdown(md);
+                    int end = styled.length();
+                    while (end > 0 && Character.isWhitespace(styled.charAt(end - 1))) end--;
+                    cell.setText(styled.subSequence(0, end));
+                }
+            }
+            while (row.getChildCount() > n) row.removeViewAt(n);
+            r++;
+        }
+        while (t.getChildCount() > r) t.removeViewAt(r);
+    }
+
+    /** A table line's cells: | a | b | → [a, b]; \| stays in its cell. */
+    private static List<String> cells(String line) {
+        String s = line.trim();
+        if (s.startsWith("|")) s = s.substring(1);
+        if (s.endsWith("|") && !s.endsWith("\\|")) s = s.substring(0, s.length() - 1);
+        List<String> out = new ArrayList<>();
+        for (String cell : s.split("(?<!\\\\)\\|", -1)) out.add(cell.trim().replace("\\|", "|"));
+        return out;
     }
 
     private void updateCode(View card, String code, String lang) {
