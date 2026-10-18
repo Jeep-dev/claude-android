@@ -136,7 +136,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
         bridge = new Bridge(this, this);
         userland = new Userland(this);
-        md = new Md(this, this::copy, this::openUrl);
+        md = new Md(talkContext(), this::copy, this::openUrl);
         // The keyboard opens when the box is tapped, never by itself (coming back from the background).
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
                 | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
@@ -227,7 +227,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         list.setPadding(dp(18), dp(6), dp(18), dp(24));
         list.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         list.setItemAnimator(null); // rows change in place; animated moves overlap neighbours
-        adapter = new ThreadAdapter(this, md, this::copy, row -> {
+        adapter = new ThreadAdapter(talkContext(), md, this::copy, row -> {
             // A row opened or closed. At the bottom the list keeps following the end; elsewhere it
             // stays where the reader is, and an opened row hidden below is scrolled into view
             // (its head staying on screen).
@@ -1025,7 +1025,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         if (linkDot == null) return;
         // Connected only while the bridge keeps pinging: a frozen one keeps the connection open.
         boolean silent = linked && Bridge.lastAlive > 0 && System.currentTimeMillis() - Bridge.lastAlive > 8000;
-        String label = silent ? "后台没有响应" : linked ? "Claude Code 运行中" : installing ? "正在准备…"
+        String label = silent ? "后台没有响应" : linked ? "Claude Code" : installing ? "正在准备…"
                 : connecting ? "正在启动…" : "未运行 · 点此重试";
         int bannerShown = !linked && !connecting && setup == null && everLinked ? View.VISIBLE : View.GONE;
         if (banner.getVisibility() != bannerShown) banner.setVisibility(bannerShown);
@@ -1555,7 +1555,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         LinearLayout row = Ui.row(this);
         row.setPadding(dp(14), 0, dp(14), 0);
         row.setMinimumHeight(dp(50));
-        row.setBackground(Ui.press(this, null, dp(12)));
+        if (click != null) row.setBackground(Ui.press(this, null, dp(12)));
         if (iconRes != 0) {
             row.addView(Ui.icon(this, iconRes, 19, danger ? R.color.danger : R.color.text2));
             row.addView(new View(this), new LinearLayout.LayoutParams(dp(14), 1));
@@ -1572,7 +1572,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             v.setPadding(dp(12), 0, 0, 0);
             row.addView(v);
         }
-        row.setOnClickListener(v -> click.run());
+        if (click != null) row.setOnClickListener(v -> click.run());
         card.addView(row, Ui.fill());
     }
 
@@ -1729,8 +1729,17 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private Dialog settingsPage;
     private LinearLayout settingsBox;
+    private TextView settingsTitle;
+    /** The page of Settings shown: null for the list of pages, else one of them. */
+    private String settingsAt;
     /** The launch options last read from the bridge, shown while they are read again. */
     private JSONObject launchCache;
+
+    private static final String[][] PAGES = {
+            {"look", "外观"}, {"talk", "对话"}, {"model", "模型"},
+            {"claude", "Claude Code"}, {"ext", "扩展"},
+            {"storage", "存储"}, {"keep", "后台"}, {"about", "关于"},
+    };
 
     /** Opens Settings, a full-screen page (or refreshes it when open). */
     private void settingsSheet() {
@@ -1741,12 +1750,12 @@ public final class MainActivity extends Activity implements Bridge.Events {
             LinearLayout top = Ui.row(this);
             top.setPadding(dp(6), 0, dp(6), 0);
             ImageView back = Ui.iconButton(this, R.drawable.ic_back, 40, 22, R.color.text);
-            back.setOnClickListener(v -> d.dismiss());
+            back.setOnClickListener(v -> settingsBack());
             top.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
-            TextView t = Ui.text(this, "设置", 18, R.color.text);
-            t.setTypeface(Ui.SERIF);
-            t.setPadding(dp(6), 0, 0, 0);
-            top.addView(t);
+            settingsTitle = Ui.text(this, "设置", 18, R.color.text);
+            settingsTitle.setTypeface(Ui.SERIF);
+            settingsTitle.setPadding(dp(6), 0, 0, 0);
+            top.addView(settingsTitle);
             root.addView(top, new LinearLayout.LayoutParams(-1, dp(48)));
             ScrollView scroll = new ScrollView(this);
             settingsBox = Ui.column(this);
@@ -1756,12 +1765,36 @@ public final class MainActivity extends Activity implements Bridge.Events {
             d.setContentView(root);
             Themes.window(d.getWindow(), this);
             if (d.getWindow() != null) d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            d.setOnDismissListener(x -> settingsPage = null);
+            d.setOnKeyListener((x, code, e) -> {
+                if (code != android.view.KeyEvent.KEYCODE_BACK) return false;
+                if (e.getAction() == android.view.KeyEvent.ACTION_UP && !e.isCanceled()) settingsBack();
+                return true;
+            });
+            d.setOnDismissListener(x -> { settingsPage = null; settingsAt = null; });
             settingsPage = d;
             fillSettings(linked ? launchCache : null);
             d.show();
         }
         refreshSettings();
+    }
+
+    /** Back: from a page to the list of pages, from the list out of Settings. */
+    private void settingsBack() {
+        if (settingsPage == null) return;
+        if (settingsAt == null) { settingsPage.dismiss(); return; }
+        settingsOpen(null);
+    }
+
+    private void settingsOpen(String page) {
+        settingsAt = page;
+        fillSettings(linked ? launchCache : null);
+        View scroll = (View) settingsBox.getParent();
+        scroll.scrollTo(0, 0);
+        settingsBox.setAlpha(0f);
+        settingsBox.setTranslationX(dp(page == null ? -24 : 24));
+        settingsBox.animate().alpha(1f).translationX(0).setDuration(160).start();
+        if (page != null && page.equals("claude")) loadSchema(() -> { });
+        if (page != null && page.equals("storage")) measureStorage();
     }
 
     /** Reads the options again and redraws Settings, if open. */
@@ -1791,8 +1824,24 @@ public final class MainActivity extends Activity implements Bridge.Events {
         if (settingsPage == null) return;
         LinearLayout box = settingsBox;
         box.removeAllViews();
+        String name = "设置";
+        for (String[] p : PAGES) if (p[0].equals(settingsAt)) name = p[1];
+        settingsTitle.setText(name);
+        if (settingsAt == null) { fillPages(box); return; }
+        switch (settingsAt) {
+            case "look": fillLook(box); break;
+            case "talk": fillTalk(box, launch); break;
+            case "model": fillModel(box); break;
+            case "claude": fillClaude(box); break;
+            case "ext": fillExt(box, launch); break;
+            case "storage": fillStorage(box); break;
+            case "keep": fillKeep(box); break;
+            default: fillAbout(box); break;
+        }
+    }
 
-        // Claude Code: its state, restart, log.
+    /** The first level: Claude Code's state, then a row for each page. */
+    private void fillPages(LinearLayout box) {
         LinearLayout run = card(box);
         LinearLayout status = Ui.row(this);
         status.setPadding(dp(14), 0, dp(6), 0);
@@ -1800,10 +1849,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
         View dot = new View(this);
         dot.setBackground(Ui.round(col(linked ? R.color.ok : installing || connecting ? R.color.text3 : R.color.danger), dp(4)));
         status.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
-        TextView name = Ui.text(this, "Claude Code", 16, R.color.text);
-        name.setTypeface(Ui.MEDIUM);
-        name.setPadding(dp(12), 0, dp(8), 0);
-        status.addView(name);
+        TextView title = Ui.text(this, "Claude Code", 16, R.color.text);
+        title.setTypeface(Ui.MEDIUM);
+        title.setPadding(dp(12), 0, dp(8), 0);
+        status.addView(title);
         status.addView(Ui.text(this, claudeVersion, 13, R.color.text3), new LinearLayout.LayoutParams(0, -2, 1));
         TextView restart = Ui.text(this, "重启", 14.5f, R.color.accentPress);
         restart.setPadding(dp(10), dp(8), dp(10), dp(8));
@@ -1816,44 +1865,458 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
         status.addView(restart);
         run.addView(status, Ui.fill());
-        option(run, R.drawable.ic_list, "日志", null, false, this::logSheet);
 
-        section(box, "模型");
-        LinearLayout api = card(box);
         String url = settingsEnv().optString("ANTHROPIC_BASE_URL");
         String host = url.isEmpty() ? "Anthropic" : Uri.parse(url).getHost() != null ? Uri.parse(url).getHost() : url;
-        option(api, R.drawable.ic_link, "API", host, false, this::apiSheet);
-        option(api, R.drawable.ic_bot, "登录 Claude 账号", null, false, () -> openTerminal("claude\r"));
+        String folderNow = cwd.isEmpty() ? defaultCwd : cwd;
+        int set = settingsJson().length();
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        boolean todo = !hasStorage() || !pm.isIgnoringBatteryOptimizations(getPackageName());
 
-        section(box, "对话");
+        LinearLayout a = card(box);
+        Ui.margins(a, this, 0, 12, 0, 0);
+        page(a, R.drawable.ic_image, "look", Themes.current(this).name);
+        page(a, R.drawable.ic_compose, "talk", folderNow.isEmpty() ? "~/work" : tilde(folderNow));
+        page(a, R.drawable.ic_link, "model", host);
+        LinearLayout b = card(box);
+        Ui.margins(b, this, 0, 12, 0, 0);
+        page(b, R.drawable.ic_gear, "claude", set == 0 ? null : set + " 项");
+        page(b, R.drawable.ic_tool, "ext", null);
+        LinearLayout c = card(box);
+        Ui.margins(c, this, 0, 12, 0, 0);
+        page(c, R.drawable.ic_folder, "storage", null);
+        page(c, R.drawable.ic_refresh, "keep", todo ? "待设置" : null);
+        page(c, R.drawable.ic_book, "about", "v" + appVersion());
+    }
+
+    private void page(LinearLayout card, int icon, String id, String value) {
+        String label = id;
+        for (String[] p : PAGES) if (p[0].equals(id)) label = p[1];
+        option(card, icon, label, value, false, () -> settingsOpen(id));
+        LinearLayout row = (LinearLayout) card.getChildAt(card.getChildCount() - 1);
+        View more = Ui.icon(this, R.drawable.ic_chevron_right, 16, R.color.text3);
+        row.addView(more);
+        Ui.margins(more, this, 8, 0, 0, 0);
+    }
+
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    // ---- 外观 ----
+
+    private void fillLook(LinearLayout box) {
+        section(box, "主题");
+        LinearLayout themes = card(box);
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = Ui.row(this);
+        row.setPadding(dp(6), dp(10), dp(6), dp(8));
+        String now = Themes.current(this).id;
+        for (Themes.Theme t : Themes.ALL) row.addView(swatch(t, t.id.equals(now)), new LinearLayout.LayoutParams(dp(62), -2));
+        scroll.addView(row);
+        themes.addView(scroll, Ui.fill());
+
+        section(box, "文字");
+        LinearLayout text = card(box);
+        LinearLayout size = Ui.row(this);
+        size.setPadding(dp(14), dp(6), dp(8), dp(6));
+        size.setMinimumHeight(dp(50));
+        size.addView(Ui.text(this, "大小", 15.5f, R.color.text), new LinearLayout.LayoutParams(0, -2, 1));
+        size.addView(segmented(Fonts.SIZES, Fonts.size(this), i -> {
+            Fonts.setSize(this, i);
+            restyle();
+        }));
+        text.addView(size, Ui.fill());
+        option(text, 0, "中文字体", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
+        option(text, 0, "英文字体", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
+    }
+
+    /** A theme as a circle in its colours ("Aa" in its text on its background), its name below. */
+    private View swatch(Themes.Theme t, boolean chosen) {
+        LinearLayout cell = Ui.column(this);
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        int[] light = Themes.preview(this, t, false), dark = Themes.preview(this, t, true);
+        View circle = new View(this) {
+            final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+            @Override protected void onDraw(Canvas canvas) {
+                float w = getWidth(), r = w / 2f, ring = dp(chosen ? 2.5f : 1);
+                android.graphics.RectF oval = new android.graphics.RectF(ring, ring, w - ring, w - ring);
+                p.setStyle(android.graphics.Paint.Style.FILL);
+                p.setColor(light[0]);
+                if (t.dark == null) {
+                    // Following the system: half light, half dark.
+                    canvas.drawArc(oval, 90, 180, true, p);
+                    p.setColor(dark[0]);
+                    canvas.drawArc(oval, 270, 180, true, p);
+                } else {
+                    canvas.drawOval(oval, p);
+                }
+                p.setStyle(android.graphics.Paint.Style.STROKE);
+                p.setStrokeWidth(ring);
+                p.setColor(chosen ? col(R.color.accent) : col(R.color.borderStrong));
+                canvas.drawCircle(r, r, r - ring / 2f, p);
+                if (t.dark != null) {
+                    p.setStyle(android.graphics.Paint.Style.FILL);
+                    p.setColor(light[1]);
+                    p.setTextSize(dp(13));
+                    p.setTypeface(Ui.SERIF);
+                    p.setTextAlign(android.graphics.Paint.Align.CENTER);
+                    canvas.drawText("Aa", r, r - (p.descent() + p.ascent()) / 2f, p);
+                }
+            }
+        };
+        cell.addView(circle, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        TextView name = Ui.text(this, t.name, 12, chosen ? R.color.text : R.color.text2);
+        name.setPadding(0, dp(6), 0, 0);
+        name.setSingleLine(true);
+        cell.addView(name);
+        cell.setOnClickListener(v -> {
+            if (chosen) return;
+            Themes.set(this, t.id);
+            restyle();
+        });
+        return cell;
+    }
+
+    /** Choices side by side, the chosen one raised. */
+    private View segmented(String[] labels, int chosen, java.util.function.IntConsumer pick) {
+        LinearLayout bar = Ui.row(this);
+        bar.setPadding(dp(3), dp(3), dp(3), dp(3));
+        bar.setBackground(Ui.round(col(R.color.surface2), dp(10)));
+        for (int i = 0; i < labels.length; i++) {
+            int index = i;
+            TextView t = Ui.text(this, labels[i], 14, i == chosen ? R.color.text : R.color.text2);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(dp(14), 0, dp(14), 0);
+            t.setMinHeight(dp(32));
+            if (i == chosen) {
+                t.setTypeface(Ui.MEDIUM);
+                t.setBackground(Ui.round(col(R.color.surface), dp(8), dp(1), col(R.color.border)));
+            } else {
+                t.setOnClickListener(v -> pick.accept(index));
+            }
+            bar.addView(t);
+        }
+        return bar;
+    }
+
+    // ---- 对话 ----
+
+    private void fillTalk(LinearLayout box, JSONObject launch) {
         LinearLayout talk = card(box);
         String folderNow = cwd.isEmpty() ? defaultCwd : cwd;
         option(talk, R.drawable.ic_folder, "工作文件夹", folderNow.isEmpty() ? "~/work" : tilde(folderNow), false, () -> {
             if (!linked) { toast("Claude Code 还没启动好"); return; }
             folderSheet(null);
         });
-        if (launch != null) {
-            String mode = launch.optString("permissionMode", "bypassPermissions");
-            String prompt = launch.optString("appendSystemPrompt");
-            String extra = launch.optString("extraArgs");
-            option(talk, R.drawable.ic_tool, "权限", mode, false, () -> permissionSheet(mode));
-            option(talk, R.drawable.ic_spark, "系统提示", oneLine(prompt), false,
-                    () -> textSheet("系统提示", prompt, "", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::refreshSettings));
-            option(talk, R.drawable.ic_edit_lines, "启动参数", extra.trim(), false,
-                    () -> textSheet("启动参数", extra, "--max-turns 50", false, (t, done) -> saveLaunch("extraArgs", t, done), this::refreshSettings));
-            String folder = current.cwd == null || current.cwd.isEmpty() ? folderNow : current.cwd;
-            option(talk, R.drawable.ic_book, "CLAUDE.md", "全局", false, () -> memorySheet("global", null, "CLAUDE.md"));
-            option(talk, R.drawable.ic_book, "CLAUDE.md", Ui.base(folder), false,
-                    () -> memorySheet("folder", folder, "CLAUDE.md · " + Ui.base(folder)));
+        if (launch == null) return;
+        String mode = launch.optString("permissionMode", "bypassPermissions");
+        String prompt = launch.optString("appendSystemPrompt");
+        String extra = launch.optString("extraArgs");
+        option(talk, R.drawable.ic_tool, "权限", mode, false, () -> permissionSheet(mode));
+        option(talk, R.drawable.ic_spark, "系统提示", oneLine(prompt), false,
+                () -> textSheet("系统提示", prompt, "", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::refreshSettings));
+        option(talk, R.drawable.ic_edit_lines, "启动参数", extra.trim(), false,
+                () -> textSheet("启动参数", extra, "--max-turns 50", false, (t, done) -> saveLaunch("extraArgs", t, done), this::refreshSettings));
+        section(box, "CLAUDE.md");
+        LinearLayout memory = card(box);
+        String folder = current.cwd == null || current.cwd.isEmpty() ? folderNow : current.cwd;
+        option(memory, R.drawable.ic_book, "全局", "~/.claude", false, () -> memorySheet("global", null, "CLAUDE.md"));
+        option(memory, R.drawable.ic_book, Ui.base(folder), tilde(folder), false,
+                () -> memorySheet("folder", folder, "CLAUDE.md · " + Ui.base(folder)));
+    }
+
+    // ---- 模型 ----
+
+    private void fillModel(LinearLayout box) {
+        JSONObject env = settingsEnv();
+        LinearLayout api = card(box);
+        String url = env.optString("ANTHROPIC_BASE_URL");
+        String key = env.optString("ANTHROPIC_AUTH_TOKEN", env.optString("ANTHROPIC_API_KEY"));
+        option(api, R.drawable.ic_link, "地址", url.isEmpty() ? "Anthropic" : url, false, this::apiSheet);
+        option(api, R.drawable.ic_gear, "API Key", key.isEmpty() ? null : mask(key), false, this::apiSheet);
+        option(api, R.drawable.ic_bot, "模型", env.optString("ANTHROPIC_MODEL"), false, this::apiSheet);
+        LinearLayout login = card(box);
+        Ui.margins(login, this, 0, 12, 0, 0);
+        option(login, R.drawable.ic_bot, "登录 Claude 账号", null, false, () -> openTerminal("claude\r"));
+    }
+
+    private static String mask(String secret) {
+        return secret.length() <= 8 ? "••••" : secret.substring(0, 4) + "••••" + secret.substring(secret.length() - 4);
+    }
+
+    // ---- Claude Code: its settings.json, as its own schema describes it ----
+
+    /** The settings Claude Code knows (key, type, desc, choices), read from it by the bridge; null until read. */
+    private JSONArray schema;
+
+    private void loadSchema(Runnable then) {
+        if (schema != null || !linked) return;
+        bridge.get("/settings-schema", (status, data) -> {
+            if (status != 200) return;
+            schema = data.optJSONArray("settings");
+            if (schema == null) schema = new JSONArray();
+            then.run();
+        });
+    }
+
+    private JSONObject schemaOf(String key) {
+        for (int i = 0; schema != null && i < schema.length(); i++) {
+            JSONObject s = schema.optJSONObject(i);
+            if (s != null && key.equals(s.optString("key"))) return s;
         }
+        return null;
+    }
 
-        section(box, "外观");
-        LinearLayout look = card(box);
-        option(look, 0, "主题", Themes.current(this).name, false, this::themeSheet);
-        option(look, 0, "中文字体", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
-        option(look, 0, "英文字体", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
+    private void fillClaude(LinearLayout box) {
+        JSONObject json = settingsJson();
+        JSONObject env = json.optJSONObject("env");
+        LinearLayout tools = card(box);
+        option(tools, R.drawable.ic_plus, "添加设置", null, false, this::addSettingSheet);
+        option(tools, R.drawable.ic_list, "环境变量", env == null || env.length() == 0 ? null : String.valueOf(env.length()), false, this::envSheet);
+        option(tools, R.drawable.ic_file, "settings.json", null, false, this::rawSettingsSheet);
+        List<String> keys = new ArrayList<>();
+        for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
+            String k = it.next();
+            if (!k.equals("env")) keys.add(k);
+        }
+        if (keys.isEmpty()) return;
+        java.util.Collections.sort(keys, String.CASE_INSENSITIVE_ORDER);
+        section(box, "已设置");
+        LinearLayout set = card(box);
+        for (String k : keys) option(set, 0, k, summary(json.opt(k)), false, () -> settingSheet(k));
+    }
 
-        section(box, "扩展");
+    private static String summary(Object v) {
+        if (v instanceof Boolean) return (Boolean) v ? "开" : "关";
+        if (v instanceof JSONObject) return ((JSONObject) v).length() == 0 ? "{ }" : "{ " + ((JSONObject) v).length() + " }";
+        if (v instanceof JSONArray) return "[ " + ((JSONArray) v).length() + " ]";
+        return v == null || v == JSONObject.NULL ? "" : String.valueOf(v);
+    }
+
+    /** One setting: its description, and a way to set it fitting its type; or to remove it. */
+    private void settingSheet(String key) {
+        JSONObject json = settingsJson();
+        Object value = json.opt(key);
+        JSONObject spec = schemaOf(key);
+        String type = spec != null ? spec.optString("type")
+                : value instanceof Boolean ? "bool" : value instanceof Number ? "number"
+                : value instanceof String ? "string" : "json";
+        Dialog sheet = sheet(key, spec != null ? spec.optString("desc") : null);
+        java.util.function.Consumer<Object> save = v -> {
+            JSONObject now = settingsJson();
+            try {
+                if (v == null) now.remove(key); else now.put(key, v);
+            } catch (JSONException e) {
+                return;
+            }
+            if (saveSettings(now)) { toast("已保存"); sheet.dismiss(); refreshSettings(); }
+        };
+        if (type.equals("bool") || type.equals("enum")) {
+            LinearLayout card = card(sheet);
+            List<Object> values = new ArrayList<>();
+            List<String> names = new ArrayList<>();
+            if (type.equals("bool")) {
+                values.add(true); names.add("开");
+                values.add(false); names.add("关");
+            } else {
+                JSONArray choices = spec.optJSONArray("choices");
+                for (int i = 0; choices != null && i < choices.length(); i++) {
+                    values.add(choices.opt(i));
+                    names.add(String.valueOf(choices.opt(i)));
+                }
+                if (value != null && !values.contains(value)) { values.add(value); names.add(String.valueOf(value)); }
+            }
+            for (int i = 0; i < values.size(); i++) {
+                Object v = values.get(i);
+                option(card, 0, names.get(i), null, false, () -> save.accept(v));
+                if (v.equals(value)) check(card);
+            }
+            if (value != null) {
+                LinearLayout reset = card(sheet);
+                Ui.margins(reset, this, 0, 10, 0, 0);
+                option(reset, R.drawable.ic_trash, "移除", null, true, () -> save.accept(null));
+            }
+            sheet.show();
+            return;
+        }
+        EditText field = new EditText(this);
+        boolean multi = type.equals("json") || (value instanceof String && ((String) value).contains("\n"));
+        String text = "";
+        if (value instanceof JSONObject || value instanceof JSONArray) {
+            try { text = value instanceof JSONObject ? ((JSONObject) value).toString(2) : ((JSONArray) value).toString(2); } catch (JSONException ignored) { /* as is */ }
+        } else if (value != null && value != JSONObject.NULL) {
+            text = String.valueOf(value);
+        }
+        field.setText(text);
+        field.setTextSize(14);
+        field.setTypeface(Ui.MONO);
+        field.setTextColor(col(R.color.text));
+        field.setHintTextColor(col(R.color.text3));
+        field.setGravity(Gravity.TOP | Gravity.START);
+        field.setPadding(dp(12), dp(10), dp(12), dp(10));
+        field.setBackground(Ui.round(col(R.color.surface), dp(10), dp(1), col(R.color.borderStrong)));
+        if (multi) {
+            field.setMinLines(5);
+            field.setMaxLines(14);
+            field.setHint("JSON");
+        } else {
+            field.setSingleLine(true);
+            if (type.equals("number")) field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        }
+        content(sheet).addView(field, Ui.fill());
+        LinearLayout actions = Ui.row(this);
+        TextView remove = button(value == null ? "取消" : "移除", false, v -> {
+            if (value == null) sheet.dismiss(); else save.accept(null);
+        });
+        TextView ok = button("保存", true, v -> {
+            String t = field.getText().toString().trim();
+            if (t.isEmpty()) { save.accept(null); return; }
+            try {
+                if (type.equals("number")) save.accept(t.matches("-?\\d+") ? (Object) Long.parseLong(t) : (Object) Double.parseDouble(t));
+                else if (type.equals("json")) save.accept(new org.json.JSONTokener(t).nextValue());
+                else save.accept(field.getText().toString());
+            } catch (NumberFormatException | JSONException e) {
+                toast(type.equals("number") ? "不是数字" : "不是有效的 JSON：" + e.getMessage());
+            }
+        });
+        ok.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
+        ok.setTextColor(col(R.color.bg));
+        actions.addView(remove, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(ok, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Ui.margins(ok, this, 10, 0, 0, 0);
+        content(sheet).addView(actions, Ui.fill());
+        Ui.margins(actions, this, 0, 14, 0, 0);
+        if (sheet.getWindow() != null) sheet.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        sheet.show();
+    }
+
+    /** Every setting Claude Code knows and settings.json lacks, found by name or description. */
+    private void addSettingSheet() {
+        if (schema == null) {
+            if (!linked) { toast("Claude Code 还没启动好"); return; }
+            loadSchema(this::addSettingSheet);
+            return;
+        }
+        Dialog sheet = sheet("添加设置", null);
+        EditText search = new EditText(this);
+        search.setHint("搜索");
+        search.setSingleLine(true);
+        search.setTextSize(15);
+        search.setTextColor(col(R.color.text));
+        search.setHintTextColor(col(R.color.text3));
+        search.setPadding(dp(12), 0, dp(12), 0);
+        search.setBackground(Ui.round(col(R.color.surface2), dp(10)));
+        content(sheet).addView(search, new LinearLayout.LayoutParams(-1, dp(42)));
+        LinearLayout list = card(sheet);
+        Ui.margins(list, this, 0, 10, 0, 0);
+        JSONObject json = settingsJson();
+        List<View> rows = new ArrayList<>();
+        List<String> texts = new ArrayList<>();
+        for (int i = 0; i < schema.length(); i++) {
+            JSONObject s = schema.optJSONObject(i);
+            if (s == null || json.has(s.optString("key"))) continue;
+            String key = s.optString("key"), desc = s.optString("desc");
+            LinearLayout row = Ui.column(this);
+            row.setPadding(dp(14), dp(10), dp(14), dp(10));
+            row.setBackground(Ui.press(this, null, dp(12)));
+            row.addView(Ui.text(this, key, 15, R.color.text));
+            TextView d = Ui.text(this, desc, 12.5f, R.color.text3);
+            d.setMaxLines(2);
+            d.setEllipsize(TextUtils.TruncateAt.END);
+            d.setPadding(0, dp(2), 0, 0);
+            row.addView(d);
+            row.setOnClickListener(v -> { sheet.dismiss(); settingSheet(key); });
+            list.addView(row, Ui.fill());
+            rows.add(row);
+            texts.add((key + " " + desc).toLowerCase(Locale.ROOT));
+        }
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(Editable s) {
+                String q = s.toString().trim().toLowerCase(Locale.ROOT);
+                for (int i = 0; i < rows.size(); i++) rows.get(i).setVisibility(q.isEmpty() || texts.get(i).contains(q) ? View.VISIBLE : View.GONE);
+            }
+        });
+        if (sheet.getWindow() != null) sheet.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        sheet.show();
+    }
+
+    /** settings.json's env: Claude Code's environment variables. */
+    private void envSheet() {
+        Dialog sheet = sheet("环境变量", null);
+        JSONObject env = settingsEnv();
+        List<String> keys = new ArrayList<>();
+        for (java.util.Iterator<String> it = env.keys(); it.hasNext(); ) keys.add(it.next());
+        java.util.Collections.sort(keys);
+        if (!keys.isEmpty()) {
+            LinearLayout card = card(sheet);
+            for (String k : keys) option(card, 0, k, env.optString(k), false, () -> { sheet.dismiss(); envEdit(k); });
+            Ui.margins(card, this, 0, 0, 0, 10);
+        }
+        LinearLayout add = card(sheet);
+        option(add, R.drawable.ic_plus, "添加变量", null, false, () -> { sheet.dismiss(); envEdit(null); });
+        sheet.show();
+    }
+
+    private void envEdit(String key) {
+        Dialog sheet = sheet(key == null ? "添加变量" : key, null);
+        EditText name = field(sheet, "名称", key == null ? "" : key, "NAME");
+        EditText value = field(sheet, "值", key == null ? "" : settingsEnv().optString(key), "");
+        LinearLayout actions = Ui.row(this);
+        TextView remove = button(key == null ? "取消" : "删除", false, v -> {
+            if (key == null) { sheet.dismiss(); envSheet(); return; }
+            JSONObject json = settingsJson();
+            JSONObject env = json.optJSONObject("env");
+            if (env != null) env.remove(key);
+            if (saveSettings(json)) { toast("已删除"); sheet.dismiss(); envSheet(); refreshSettings(); }
+        });
+        TextView ok = button("保存", true, v -> {
+            String n = name.getText().toString().trim();
+            if (n.isEmpty()) { toast("名称不能为空"); return; }
+            JSONObject json = settingsJson();
+            JSONObject env = json.optJSONObject("env");
+            if (env == null) env = new JSONObject();
+            if (key != null) env.remove(key);
+            try {
+                env.put(n, value.getText().toString());
+                json.put("env", env);
+            } catch (JSONException e) {
+                return;
+            }
+            if (saveSettings(json)) { toast("已保存"); sheet.dismiss(); envSheet(); refreshSettings(); }
+        });
+        ok.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
+        ok.setTextColor(col(R.color.bg));
+        actions.addView(remove, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(ok, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Ui.margins(ok, this, 10, 0, 0, 0);
+        content(sheet).addView(actions, Ui.fill());
+        Ui.margins(actions, this, 0, 14, 0, 0);
+        if (sheet.getWindow() != null) sheet.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        sheet.show();
+    }
+
+    private void rawSettingsSheet() {
+        String text;
+        try { text = settingsJson().toString(2); } catch (JSONException e) { text = "{}"; }
+        textSheet("settings.json", text, "{ }", true, (t, done) -> {
+            JSONObject json;
+            try { json = new JSONObject(t.trim().isEmpty() ? "{}" : t); } catch (JSONException e) { toast("不是有效的 JSON：" + e.getMessage()); return; }
+            if (saveSettings(json)) { toast("已保存"); done.run(); }
+        }, this::refreshSettings);
+    }
+
+    // ---- 扩展 ----
+
+    private void fillExt(LinearLayout box, JSONObject launch) {
         LinearLayout ext = card(box);
         int skills = skillNames().size();
         option(ext, R.drawable.ic_spark, "技能", skills == 0 ? null : String.valueOf(skills), false, this::skillsSheet);
@@ -1863,9 +2326,77 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
         int servers = mcpServers().length();
         option(ext, R.drawable.ic_globe, "MCP", servers == 0 ? null : String.valueOf(servers), false, this::mcpSheet);
+    }
 
-        // Background: only what still needs doing, and the keep-alive command.
-        section(box, "后台");
+    // ---- 存储 ----
+
+    /** Sizes in the userland, measured when the page opens: conversations, work, temporary files, all. */
+    private long[] storage;
+
+    private void measureStorage() {
+        storage = null;
+        work.execute(() -> {
+            long[] s = {
+                    Userland.size(userland.file(Userland.HOME + "/.claude/projects")),
+                    Userland.size(userland.file(Userland.HOME + "/work")),
+                    Userland.size(userland.file("/tmp")) + Userland.size(userland.file(Userland.HOME + "/.cache")),
+                    Userland.size(userland.file("/")),
+            };
+            ui.post(() -> {
+                storage = s;
+                if ("storage".equals(settingsAt)) fillSettings(launchCache);
+            });
+        });
+    }
+
+    private void fillStorage(LinearLayout box) {
+        long[] s = storage;
+        LinearLayout sizes = card(box);
+        option(sizes, R.drawable.ic_compose, "对话记录", s == null ? "…" : Ui.size(s[0]), false, null);
+        option(sizes, R.drawable.ic_folder, "工作文件夹", s == null ? "…" : Ui.size(s[1]), false, null);
+        option(sizes, R.drawable.ic_file, "临时文件", s == null ? "…" : Ui.size(s[2]), false, null);
+        option(sizes, R.drawable.ic_terminal, "运行环境", s == null ? "…" : Ui.size(Math.max(0, s[3] - s[0] - s[1] - s[2])), false, null);
+        LinearLayout clean = card(box);
+        Ui.margins(clean, this, 0, 12, 0, 0);
+        option(clean, R.drawable.ic_trash, "清理临时文件", null, false, () -> confirm("清理临时文件", "删除 /tmp 和 ~/.cache 里的文件", false, () -> {
+            clear(userland.file("/tmp"));
+            clear(userland.file(Userland.HOME + "/.cache"));
+        }));
+        option(clean, R.drawable.ic_trash, "清空对话记录", null, true, () -> confirm("清空对话记录", "所有对话都会被删除，不能恢复", true, () -> {
+            clear(userland.file(Userland.HOME + "/.claude/projects"));
+            ui.post(this::loadSessions);
+        }));
+    }
+
+    private void clear(java.io.File dir) {
+        java.io.File[] files = dir.listFiles();
+        if (files != null) for (java.io.File f : files) Userland.delete(f);
+    }
+
+    /** Asks before doing something that cannot be undone; does it off the main thread. */
+    private void confirm(String title, String what, boolean danger, Runnable action) {
+        Dialog sheet = sheet(title, what);
+        LinearLayout actions = Ui.row(this);
+        TextView cancel = button("取消", false, v -> sheet.dismiss());
+        TextView ok = button("确定", true, v -> {
+            sheet.dismiss();
+            work.execute(() -> {
+                action.run();
+                ui.post(() -> { toast("完成"); measureStorage(); });
+            });
+        });
+        if (danger) ok.setBackground(Ui.press(this, Ui.round(col(R.color.danger), dp(10)), dp(10)));
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(ok, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Ui.margins(ok, this, 10, 0, 0, 0);
+        content(sheet).addView(actions, Ui.fill());
+        Ui.margins(actions, this, 0, 14, 0, 0);
+        sheet.show();
+    }
+
+    // ---- 后台 ----
+
+    private void fillKeep(LinearLayout box) {
         LinearLayout keep = card(box);
         if (!hasStorage()) option(keep, R.drawable.ic_folder, "允许访问存储", null, false, this::requestStorage);
         android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
@@ -1891,45 +2422,49 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 + "; settings put global settings_enable_monitor_phantom_procs false"
                 + "; device_config put activity_manager max_phantom_processes 2147483647'";
         option(keep, R.drawable.ic_copy, "复制保活命令", "rish", false, () -> copy(rish));
-
-        String version = "";
-        try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { /* none */ }
-        TextView v = Ui.text(this, "v" + version, 12, R.color.text3);
-        v.setGravity(Gravity.CENTER);
-        v.setPadding(0, dp(18), 0, 0);
-        box.addView(v, Ui.fill());
     }
 
-    // ---- fonts ----
+    // ---- 关于 ----
 
-    private void themeSheet() {
-        Dialog sheet = sheet("主题", null);
-        LinearLayout card = card(sheet);
-        String now = Themes.current(this).id;
-        for (Themes.Theme t : Themes.ALL) {
-            option(card, 0, t.name, null, false, () -> {
-                sheet.dismiss();
-                if (t.id.equals(Themes.current(this).id)) return;
-                Themes.set(this, t.id);
-                restyle();
-            });
-            if (t.id.equals(now)) check(card);
-        }
-        sheet.show();
+    private void fillAbout(LinearLayout box) {
+        LinearLayout about = card(box);
+        option(about, 0, "应用", "v" + appVersion(), false, null);
+        option(about, 0, "Claude Code", claudeVersion, false, null);
+        LinearLayout tools = card(box);
+        Ui.margins(tools, this, 0, 12, 0, 0);
+        option(tools, R.drawable.ic_list, "日志", null, false, this::logSheet);
+        option(tools, R.drawable.ic_terminal, "终端", null, false, () -> openTerminal(null));
     }
 
-    /** The colours changed: the screen is built again around the same conversations. */
+    /** The colours or text size changed: the screen is built again around the same conversations. */
     private void restyle() {
-        if (settingsPage != null) settingsPage.dismiss();
+        String at = settingsAt;
+        boolean open = settingsPage != null;
+        if (open) settingsPage.dismiss();
         Chat chat = current;
         chat.draft = input.getText().toString();
         current = null;
-        md.fontChanged();
+        md = new Md(talkContext(), this::copy, this::openUrl);
         Themes.window(getWindow(), this);
         build();
         switchTo(chat);
         renderSessions();
         updateLink();
+        if (open) {
+            settingsAt = at;
+            settingsSheet();
+        }
+    }
+
+    /** The context conversation text is made in: the chosen text size over the system's. */
+    private android.content.Context talkContext() {
+        float k = Fonts.scale(this);
+        if (k == 1f) return this;
+        android.content.res.Configuration o = new android.content.res.Configuration();
+        o.fontScale = getResources().getConfiguration().fontScale * k;
+        android.view.ContextThemeWrapper w = new android.view.ContextThemeWrapper(this, getTheme());
+        w.applyOverrideConfiguration(o);
+        return w;
     }
 
     /** The system's light or dark when the screen was built, to follow it when it changes. */
@@ -1943,7 +2478,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
         if (Themes.current(this).dark == null) restyle();
     }
 
-    /** The fonts to choose from for Chinese or Latin text, each shown in itself. */
+    // ---- fonts ----
+
     /** Which sheet a font file is imported from, to return to it. */
     private boolean fontCjk = true;
 

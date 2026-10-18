@@ -25,7 +25,10 @@ import java.util.Set;
  */
 final class Fonts {
     static final String SERIF = "serif", SANS = "sans-serif";
-    private static final String PREFS = "fonts", LATIN = "latin", CJK = "cjk";
+    private static final String PREFS = "fonts", LATIN = "latin", CJK = "cjk", SIZE = "size";
+    /** Conversation text sizes, and each one's scale over the system's text size. */
+    static final String[] SIZES = {"小", "中", "大"};
+    private static final float[] SCALES = {0.9f, 1f, 1.12f};
 
     /** A font to choose: its id (SERIF, SANS, "sys:" + group, "file:" + name) and name. */
     static final class Choice {
@@ -52,6 +55,12 @@ final class Fonts {
     static String latin(Context c) { return prefs(c).getString(LATIN, SERIF); }
 
     static String cjk(Context c) { return prefs(c).getString(CJK, SERIF); }
+
+    static int size(Context c) { return Math.max(0, Math.min(SIZES.length - 1, prefs(c).getInt(SIZE, 1))); }
+
+    static void setSize(Context c, int size) { prefs(c).edit().putInt(SIZE, size).apply(); }
+
+    static float scale(Context c) { return SCALES[size(c)]; }
 
     static void set(Context c, boolean cjk, String id) {
         prefs(c).edit().putString(cjk ? CJK : LATIN, id).apply();

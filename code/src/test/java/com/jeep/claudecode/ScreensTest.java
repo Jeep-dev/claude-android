@@ -196,6 +196,38 @@ public class ScreensTest {
         Dialog d = ShadowDialog.getLatestDialog();
         View sheet = d.getWindow().getDecorView();
         shot(sheet, "09-settings");
+        Method sf = MainActivity.class.getDeclaredMethod("settingsFile");
+        sf.setAccessible(true);
+        java.io.File settingsFile = (java.io.File) sf.invoke(a);
+        settingsFile.getParentFile().mkdirs();
+        Userland.write(settingsFile, "{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://api.deepseek.com/anthropic\",\"ANTHROPIC_AUTH_TOKEN\":\"sk-1234567890abcdef\",\"DISABLE_TELEMETRY\":\"1\"},"
+                + "\"alwaysThinkingEnabled\":true,\"cleanupPeriodDays\":90,\"permissions\":{\"allow\":[\"Bash\"]},\"effortLevel\":\"high\"}");
+        set(a, "schema", new org.json.JSONArray("[{\"key\":\"verbose\",\"type\":\"bool\",\"desc\":\"Show full tool output instead of truncated summaries\"},"
+                + "{\"key\":\"effortLevel\",\"type\":\"enum\",\"choices\":[\"low\",\"medium\",\"high\",\"xhigh\"],\"desc\":\"Persisted effort level for supported models.\"},"
+                + "{\"key\":\"cleanupPeriodDays\",\"type\":\"number\",\"desc\":\"Number of days to retain chat transcripts before automatic cleanup (default: 30).\"}]"));
+        Method open = MainActivity.class.getDeclaredMethod("settingsOpen", String.class);
+        open.setAccessible(true);
+        for (String page : new String[]{"look", "talk", "model", "claude", "storage", "about"}) {
+            open.invoke(a, page);
+            idle();
+            shot(sheet, "09-settings-" + page);
+        }
+        Method one = MainActivity.class.getDeclaredMethod("settingSheet", String.class);
+        one.setAccessible(true);
+        one.invoke(a, "effortLevel");
+        idle();
+        shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "09-setting-enum");
+        ShadowDialog.getLatestDialog().dismiss();
+        call(a, "addSettingSheet");
+        idle();
+        shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "09-setting-add");
+        ShadowDialog.getLatestDialog().dismiss();
+        call(a, "envSheet");
+        idle();
+        shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "09-setting-env");
+        ShadowDialog.getLatestDialog().dismiss();
+        open.invoke(a, (Object) null);
+        idle();
         d.dismiss();
 
         Method cfg = MainActivity.class.getDeclaredMethod("applyConfig", JSONObject.class);
@@ -214,6 +246,11 @@ public class ScreensTest {
             idle();
             shot(a.getWindow().getDecorView(), "12-" + theme);
         }
+        Fonts.setSize(a, 2);
+        call(a, "restyle");
+        idle();
+        shot(a.getWindow().getDecorView(), "13-large");
+        Fonts.setSize(a, 1);
         Themes.set(a, "system");
     }
 

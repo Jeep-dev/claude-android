@@ -73,14 +73,7 @@ final class Themes {
         for (Theme x : ALL) if (x.id.equals(id)) t = x;
         over.clear();
         for (int i = 0; i + 1 < t.colors.length; i += 2) over.put(t.colors[i], t.colors[i + 1]);
-        res = null;
-        if (t.dark != null) {
-            Context app = c.getApplicationContext();
-            Configuration cfg = new Configuration(app.getResources().getConfiguration());
-            cfg.uiMode = (cfg.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
-                    | (t.dark ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO);
-            res = app.createConfigurationContext(cfg);
-        }
+        res = t.dark == null ? null : night(c, t.dark);
         theme = t;
     }
 
@@ -95,6 +88,32 @@ final class Themes {
         Theme t = current(c);
         if (t.dark != null) return t.dark;
         return (c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private static Context lightRes, darkRes;
+
+    /** A theme's background and text colours; one following the system as light or as dark. */
+    static int[] preview(Context c, Theme t, boolean darkIfSystem) {
+        boolean dark = t.dark != null ? t.dark : darkIfSystem;
+        if (lightRes == null) {
+            lightRes = night(c, false);
+            darkRes = night(c, true);
+        }
+        Context from = dark ? darkRes : lightRes;
+        int[] out = {from.getColor(R.color.bg), from.getColor(R.color.text)};
+        for (int i = 0; i + 1 < t.colors.length; i += 2) {
+            if (t.colors[i] == R.color.bg) out[0] = t.colors[i + 1];
+            if (t.colors[i] == R.color.text) out[1] = t.colors[i + 1];
+        }
+        return out;
+    }
+
+    private static Context night(Context c, boolean dark) {
+        Context app = c.getApplicationContext();
+        Configuration cfg = new Configuration(app.getResources().getConfiguration());
+        cfg.uiMode = (cfg.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
+                | (dark ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO);
+        return app.createConfigurationContext(cfg);
     }
 
     /** A window in the theme's background, its bar icons dark on a light theme. */

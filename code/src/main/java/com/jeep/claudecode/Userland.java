@@ -8,6 +8,7 @@ import android.net.Network;
 import android.os.Environment;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.system.OsConstants;
 
 import org.tukaani.xz.XZInputStream;
 
@@ -267,6 +268,41 @@ final class Userland {
             if (Os.lstat(f.getPath()) != null && !f.isDirectory()) Os.remove(f.getPath());
         } catch (ErrnoException ignored) {
             // nothing there
+        }
+    }
+
+    /** Bytes under a file or folder, links not followed. */
+    static long size(File f) {
+        long[] total = {0};
+        try {
+            java.nio.file.Files.walkFileTree(f.toPath(), new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                @Override public java.nio.file.FileVisitResult visitFile(java.nio.file.Path p, java.nio.file.attribute.BasicFileAttributes a) {
+                    total[0] += a.size();
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override public java.nio.file.FileVisitResult visitFileFailed(java.nio.file.Path p, IOException e) {
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException ignored) {
+            // what was counted
+        }
+        return total[0];
+    }
+
+    /** Deletes a file, or a folder and all in it; a link, not what it points to. */
+    static void delete(File f) {
+        try {
+            if (OsConstants.S_ISDIR(Os.lstat(f.getPath()).st_mode)) {
+                File[] in = f.listFiles();
+                if (in != null) for (File x : in) delete(x);
+                Os.remove(f.getPath());
+            } else {
+                Os.remove(f.getPath());
+            }
+        } catch (ErrnoException ignored) {
+            // gone already, or not ours to delete
         }
     }
 

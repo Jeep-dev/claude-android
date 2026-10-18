@@ -69,7 +69,7 @@ final class Md {
                         b.codeTextColor(Ui.color(c, R.color.inlineCode))
                                 .codeBackgroundColor(Ui.color(c, R.color.surface2))
                                 .codeTypeface(Ui.MONO)
-                                .codeTextSize(Ui.dp(c, 14))
+                                .codeTextSize((int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14, c.getResources().getDisplayMetrics()))
                                 .codeBlockTextColor(Ui.color(c, R.color.text))
                                 .codeBlockBackgroundColor(Ui.color(c, R.color.codeBg))
                                 .linkColor(Ui.color(c, R.color.accentPress))

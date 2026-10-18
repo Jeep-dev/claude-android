@@ -11,6 +11,7 @@ import argparse
 import base64
 import hmac
 import json
+import mmap
 import os
 import re
 import shlex
@@ -23,7 +24,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = 17  # Bridge.VERSION in the app: an app update replaces an older running bridge
+VERSION = 18  # Bridge.VERSION in the app: an app update replaces an older running bridge
 HOME = os.path.expanduser('~')
 CLAUDE_DIR = os.path.join(HOME, '.claude')
 PROJECTS = os.path.join(CLAUDE_DIR, 'projects')
@@ -629,6 +630,171 @@ def find_claude_info():
         pass
 
 
+SCHEMA_FILE = os.path.join(STATE_DIR, 'settings-schema.json')
+schema_lock = threading.Lock()
+
+
+def js_end(text, i):
+    """Index of the ',' or closing bracket ending the JavaScript expression that starts at i."""
+    depth, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch in '"\'`':
+            i += 1
+            while i < n and text[i] != ch:
+                i += 2 if text[i] == '\\' else 1
+        elif ch == '/' and text[i - 1] in '(,=:[!&|?{};':  # a regular expression
+            i, inside = i + 1, False
+            while i < n and (text[i] != '/' or inside):
+                if text[i] == '\\':
+                    i += 1
+                elif text[i] in '[]':
+                    inside = text[i] == '['
+                i += 1
+        elif ch in '([{':
+            depth += 1
+        elif ch in ')]}' or (ch == ',' and depth == 0):
+            if depth == 0:
+                return i
+            depth -= 1
+        i += 1
+    return n
+
+
+JS_LITERAL = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|`(?:[^`\\]|\\.)*`', re.S)
+
+
+def js_string(source):
+    """The text of a JavaScript string literal, or of literals joined with +; None for anything else."""
+    parts, at = [], 0
+    while True:
+        m = JS_LITERAL.match(source, at)
+        if not m or (m.group(0)[0] == '`' and '${' in m.group(0)):
+            return None
+        parts.append(m.group(0)[1:-1])
+        rest = re.match(r'\s*\+\s*', source[m.end():])
+        if not rest:
+            break
+        at = m.end() + rest.end()
+    if source[m.end():].strip():
+        return None
+    simple = {'n': '\n', 't': '\t', 'r': '', 'b': '', 'f': '', 'v': '', '0': ''}
+
+    def unescape(e):
+        e = e.group(1)
+        if e[0] in 'ux' and len(e) > 1:
+            return chr(int(e.strip('ux{}'), 16))
+        return simple.get(e, e)
+    return re.sub(r'\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])', unescape, ''.join(parts))
+
+
+def parse_settings_schema(line):
+    """Claude Code's settings as its own schema defines them: each a lazy field with a description,
+    name:()=>type()...describe("..."). Types are told apart by what the schema chains on them."""
+    fields = []
+    for m in re.finditer(r'([A-Za-z_$][\w$]*):\(\)=>', line):
+        start = m.end()
+        expr = line[start:js_end(line, start)]
+        if not expr or expr[0] in '({':
+            continue
+        # The field's own description: the last .describe( outside any brackets.
+        depth, desc_at, i = 0, -1, 0
+        while i < len(expr):
+            ch = expr[i]
+            if ch in '"\'`':
+                q, i = ch, i + 1
+                while i < len(expr) and expr[i] != q:
+                    i += 2 if expr[i] == '\\' else 1
+            elif ch in '([{':
+                depth += 1
+            elif ch in ')]}':
+                depth -= 1
+            elif depth == 0 and expr.startswith('.describe(', i):
+                desc_at = i
+            i += 1
+        if desc_at < 0:
+            continue
+        arg_at = desc_at + len('.describe(')
+        desc = js_string(expr[arg_at:js_end(expr, arg_at)].strip())
+        if desc is None or desc.startswith('@internal'):
+            continue
+        fields.append((m.group(1), expr[:desc_at], desc))
+    if len(fields) < 20:
+        return []
+
+    def most(pattern, skip=()):
+        counts = {}
+        for name in re.findall(pattern, line):
+            if name not in skip:
+                counts[name] = counts.get(name, 0) + 1
+        return max(counts, key=counts.get) if counts else None
+    num = most(r'(?<![\w$.])([A-Za-z_$][\w$]*)\(\)\.(?:int|positive|nonnegative|gte?|lte?|finite)\(')
+    text = most(r'(?<![\w$.])([A-Za-z_$][\w$]*)\(\)\.(?:url|regex|startsWith|endsWith|email|trim)\(', (num,))
+    plain = r'^([A-Za-z_$][\w$]*)\(\)\.optional\(\)(?:\.catch\([^()]*\))?$'
+    counts = {}
+    for _, expr, _ in fields:
+        p = re.match(plain, expr)
+        if p and p.group(1) not in (num, text):
+            counts[p.group(1)] = counts.get(p.group(1), 0) + 1
+    flag = max(counts, key=counts.get) if counts else None
+    out = []
+    for name, expr, desc in fields:
+        base = re.match(r'([A-Za-z_$][\w$]*)\(', expr)
+        call = base.group(1) if base else ''
+        item = {'key': name, 'desc': desc, 'type': 'json'}
+        if call == flag and re.match(plain, expr):
+            item['type'] = 'bool'
+        elif call == num and num:
+            item['type'] = 'number'
+        elif call == text and text and re.match(r'^[A-Za-z_$][\w$]*\(\)', expr):
+            item['type'] = 'string'
+        elif base and expr[base.end():].startswith('["'):
+            try:
+                item['choices'] = json.loads(expr[base.end():js_end(expr, base.end())])
+                item['type'] = 'enum'
+            except ValueError:
+                pass
+        out.append(item)
+    return out
+
+
+def settings_schema():
+    """The settings Claude Code knows, read from its program once per version (kept in SCHEMA_FILE)."""
+    with schema_lock:
+        try:
+            path = os.path.realpath(claude_path())
+            st = os.stat(path)
+            stamp = '%d-%d' % (st.st_size, st.st_mtime)
+            try:
+                with open(SCHEMA_FILE, encoding='utf-8') as f:
+                    saved = json.load(f)
+                if saved.get('stamp') == stamp:
+                    return saved.get('settings', [])
+            except (OSError, ValueError, AttributeError):
+                pass
+            # The line of its bundled source holding the most lazy fields with a description.
+            best, best_count = b'', 0
+            with open(path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+                at = data.find(b':()=>')
+                while at >= 0:
+                    begin = data.rfind(b'\n', 0, at) + 1
+                    end = data.find(b'\n', at)
+                    end = len(data) if end < 0 else end
+                    chunk = data[begin:end]
+                    count = chunk.count(b').describe(')
+                    if count > best_count and chunk.count(b':()=>') > 20:
+                        best, best_count = chunk, count
+                    at = data.find(b':()=>', end)
+            found = parse_settings_schema(best.decode('utf-8', 'replace'))
+            if found:
+                os.makedirs(STATE_DIR, exist_ok=True)
+                with open(SCHEMA_FILE, 'w', encoding='utf-8') as f:
+                    json.dump({'stamp': stamp, 'settings': found}, f)
+            return found
+        except (OSError, ValueError):
+            return []
+
+
 def read_config():
     models, settings = [], {}
     try:
@@ -742,6 +908,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200 if data else 404, data or {'error': 'not found'})
         elif url.path == '/config':
             self.reply(200, read_config())
+        elif url.path == '/settings-schema':
+            self.reply(200, {'settings': settings_schema()})
         elif url.path == '/launch':
             self.reply(200, launch.data)
         elif url.path == '/memory':
