@@ -191,6 +191,9 @@ public class ScreensTest {
                 {"WebFetch", "{\"url\":\"https://example.com\"}"}, {"WebSearch", "{\"query\":\"termux python\"}"},
                 {"Task", "{\"description\":\"Explore repo\"}"}, {"TodoWrite", "{}"}, {"Skill", "{\"skill\":\"simplify\"}"}};
         for (String[] n : names) {
+            Chat.Block th = new Chat.Block(Chat.Block.THINKING);
+            th.text = "想一下";
+            tm.blocks.add(th);
             Chat.Block b = new Chat.Block(Chat.Block.TOOL);
             b.name = n[0];
             b.input = new JSONObject(n[1]);
@@ -275,7 +278,7 @@ public class ScreensTest {
         shot(ShadowDialog.getLatestDialog().getWindow().getDecorView(), "11-model");
         ShadowDialog.getLatestDialog().dismiss();
 
-        for (String theme : new String[]{"black", "paper", "mist", "slate", "dark"}) {
+        for (String theme : new String[]{"black", "white", "paper", "mist", "slate", "dark"}) {
             Themes.set(a, theme);
             call(a, "restyle");
             idle();

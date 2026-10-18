@@ -116,8 +116,10 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
                     if (b.kind == Chat.Block.THINKING && b.streaming && !b.open) continue;
                     int type = b.kind == Chat.Block.TEXT ? TEXT : b.kind == Chat.Block.THINKING ? THINKING
                             : b.kind == Chat.Block.TOOL ? TOOL : b.kind == Chat.Block.ERROR ? ERROR : STOPPED;
-                    int gap = prev == null ? (out.isEmpty() ? 6 : 20)
-                            : prev.kind == Chat.Block.TOOL && b.kind == Chat.Block.TOOL ? 2 : 14;
+                    // Steps (tools and thinking) one after another sit close, as one list.
+                    boolean step = b.kind == Chat.Block.TOOL || b.kind == Chat.Block.THINKING;
+                    boolean prevStep = prev != null && (prev.kind == Chat.Block.TOOL || prev.kind == Chat.Block.THINKING);
+                    int gap = prev == null ? (out.isEmpty() ? 6 : 20) : step && prevStep ? 2 : 14;
                     long sig = ((long) b.version << 1) | (b.open ? 1 : 0);
                     out.add(new Item(type, b.id, sig, m, b, gap));
                     prev = b;
@@ -338,8 +340,8 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
 
     private LinearLayout head(int icon, boolean boxed) {
         LinearLayout head = Ui.row(c);
-        head.setMinimumHeight(Ui.dp(c, 36));
-        head.setPadding(Ui.dp(c, 6), Ui.dp(c, 4), Ui.dp(c, 8), Ui.dp(c, 4));
+        head.setMinimumHeight(Ui.dp(c, 32));
+        head.setPadding(Ui.dp(c, 6), Ui.dp(c, 2), Ui.dp(c, 8), Ui.dp(c, 2));
         head.setBackground(Ui.press(c, null, Ui.dp(c, 10)));
         LinearLayout.LayoutParams lp = Ui.fill();
         lp.leftMargin = -Ui.dp(c, 6);
@@ -347,9 +349,9 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         if (boxed) {
             FrameLayout frame = new FrameLayout(c);
             frame.setBackground(Ui.round(Ui.color(c, R.color.surface), Ui.dp(c, 8), Ui.dp(c, 1), Ui.color(c, R.color.border)));
-            ImageView i = Ui.icon(c, icon, 17, R.color.text2);
-            frame.addView(i, new FrameLayout.LayoutParams(Ui.dp(c, 17), Ui.dp(c, 17), Gravity.CENTER));
-            head.addView(frame, new LinearLayout.LayoutParams(Ui.dp(c, 26), Ui.dp(c, 26)));
+            ImageView i = Ui.icon(c, icon, 16, R.color.text2);
+            frame.addView(i, new FrameLayout.LayoutParams(Ui.dp(c, 16), Ui.dp(c, 16), Gravity.CENTER));
+            head.addView(frame, new LinearLayout.LayoutParams(Ui.dp(c, 24), Ui.dp(c, 24)));
         } else {
             head.addView(Ui.icon(c, icon, 17, R.color.text2));
         }
@@ -478,7 +480,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
             Bitmap bmp = decode(src);
             if (bmp != null) thumb.setImageBitmap(bmp);
             thumb.setOnClickListener(v -> Images.show(c, src, null));
-            head.addView(thumb, new LinearLayout.LayoutParams(Ui.dp(c, 34), Ui.dp(c, 34)));
+            head.addView(thumb, new LinearLayout.LayoutParams(Ui.dp(c, 28), Ui.dp(c, 28)));
             Ui.margins(thumb, c, 8, 0, 0, 0);
         }
         Ui.margins(state, c, 8, 0, 0, 0);

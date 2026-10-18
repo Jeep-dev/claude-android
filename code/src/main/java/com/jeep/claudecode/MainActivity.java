@@ -402,9 +402,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
     /** Places what floats, and keeps the conversation clear of it, for the bars' sizes now. */
     private void placeImmersive() {
         if (!immersive || composer == null) return;
-        // The buttons just under the status bar, and the box as far from the bottom as they are
-        // from the top (or just above the keyboard).
-        int below = keyboard ? insetBottom + dp(8) : Math.max(insetBottom + dp(8), insetTop);
+        // The buttons just under the status bar, and the box about as far from the bottom (or
+        // just above the keyboard).
+        int below = keyboard ? insetBottom + dp(8) : Math.max(insetBottom + dp(8), insetTop - dp(12));
         composer.setPadding(dp(12), dp(4), dp(12), below);
         if (drawerPanel != null) drawerPanel.setPadding(0, insetTop, 0, keyboard ? 0 : insetBottom);
         ((FrameLayout.LayoutParams) topButtons.getLayoutParams()).topMargin = insetTop;
