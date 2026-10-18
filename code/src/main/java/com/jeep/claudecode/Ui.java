@@ -108,12 +108,6 @@ final class Ui {
         return v;
     }
 
-    static String tokens(long n) {
-        if (n >= 1_000_000) return String.format(java.util.Locale.ROOT, "%.1fM", n / 1e6);
-        if (n >= 1000) return String.format(java.util.Locale.ROOT, "%.1fk", n / 1e3);
-        return String.valueOf(n);
-    }
-
     static String base(String path) {
         if (path == null || path.isEmpty()) return "";
         String p = path.replaceAll("/+$", "");

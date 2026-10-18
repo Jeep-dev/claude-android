@@ -22,6 +22,10 @@
     <color name="warn">#B26A12</color>
     <color name="codeBg">#F6F5F0</color>
     <color name="inlineCode">#B4532F</color>
+    <color name="codeKeyword">#A626A4</color>
+    <color name="codeString">#50A14F</color>
+    <color name="codeComment">#A0A1A7</color>
+    <color name="codeNumber">#986801</color>
     <color name="diffDel">#A33A2F</color>
     <color name="diffDelBg">#1AC4483B</color>
     <color name="diffAdd">#22704A</color>

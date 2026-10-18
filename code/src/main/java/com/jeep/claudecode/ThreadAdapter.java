@@ -386,7 +386,7 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         MaxScroll scroll = new MaxScroll(c, Ui.dp(c, 300));
         TextView body = Ui.text(c, b.text, 14.5f, R.color.text2);
         body.setTypeface(Fonts.body(c));
-        body.setLineSpacing(0, 1.35f);
+        body.setLineSpacing(0, 1.2f);
         body.setTextIsSelectable(true);
         scroll.addView(body);
         h.thinkBody = body;
@@ -692,12 +692,6 @@ final class ThreadAdapter extends RecyclerView.Adapter<ThreadAdapter.Holder> {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(c, 32), Ui.dp(c, 32));
         lp.leftMargin = -Ui.dp(c, 8);
         row.addView(copyBtn, lp);
-        if (m.context > 0 || m.output > 0) {
-            TextView usage = Ui.text(c, "↑" + Ui.tokens(m.context) + " ↓" + Ui.tokens(m.output) + " CH " + Ui.tokens(m.cached), 12, R.color.text3);
-            usage.setTypeface(Ui.MONO);
-            usage.setPadding(Ui.dp(c, 4), 0, 0, 0);
-            row.addView(usage);
-        }
         box.addView(row);
     }
 

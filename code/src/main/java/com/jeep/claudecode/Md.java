@@ -159,7 +159,7 @@ final class Md {
         t.setLayoutParams(Ui.fill());
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16.5f);
         t.setTextColor(Ui.color(c, R.color.text));
-        t.setLineSpacing(0, 1.3f);
+        t.setLineSpacing(0, 1.15f);
         t.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);
         selectable(t);
         setProse(t, markdown);
@@ -227,7 +227,7 @@ final class Md {
                     cell = new TextView(c);
                     cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
                     cell.setTextColor(Ui.color(c, R.color.text));
-                    cell.setLineSpacing(0, 1.2f);
+                    cell.setLineSpacing(0, 1.1f);
                     cell.setMaxWidth(maxCell);
                     cell.setPadding(Ui.dp(c, 10), Ui.dp(c, 7), Ui.dp(c, 10), Ui.dp(c, 7));
                     cell.setBackgroundColor(Ui.color(c, i == 0 ? R.color.surface2 : R.color.bg));
@@ -269,7 +269,7 @@ final class Md {
         TextView name = card.findViewWithTag("lang");
         TextView body = card.findViewWithTag("body");
         name.setText(lang.isEmpty() ? "代码" : lang);
-        if (!code.contentEquals(body.getText())) body.setText(code);
+        if (!code.contentEquals(body.getText())) body.setText(Highlight.code(c, code, lang));
         card.setTag(R.id.markdown, code);
     }
 
@@ -301,10 +301,10 @@ final class Md {
         card.addView(line, new LinearLayout.LayoutParams(-1, Ui.dp(c, 1)));
         HorizontalScrollView scroll = new HorizontalScrollView(c);
         scroll.setHorizontalScrollBarEnabled(false);
-        TextView body = Ui.text(c, code, 13, R.color.text);
+        TextView body = Ui.text(c, Highlight.code(c, code, lang), 13, R.color.text);
         body.setTag("body");
         body.setTypeface(Ui.MONO);
-        body.setLineSpacing(0, 1.25f);
+        body.setLineSpacing(0, 1.12f);
         body.setPadding(Ui.dp(c, 14), Ui.dp(c, 12), Ui.dp(c, 14), Ui.dp(c, 12));
         body.setHorizontallyScrolling(true);
         body.setTextIsSelectable(true);

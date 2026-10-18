@@ -16,6 +16,10 @@
     <color name="user">#3A3936</color>
     <color name="codeBg">#1F1E1D</color>
     <color name="inlineCode">#F0A587</color>
+    <color name="codeKeyword">#C678DD</color>
+    <color name="codeString">#98C379</color>
+    <color name="codeComment">#7F848E</color>
+    <color name="codeNumber">#D19A66</color>
     <color name="diffDel">#F0A097</color>
     <color name="diffDelBg">#29C4483B</color>
     <color name="diffAdd">#8FD3AD</color>
