@@ -33,8 +33,6 @@ final class Bridge {
     /** Not Termux's 8765: a bridge left running there must not answer for this one. */
     static final int PORT = 8766;
     private static final String BASE = "http://127.0.0.1:" + PORT;
-    /** VERSION in assets/bridge.py; a running bridge of another version is replaced. */
-    private static final int VERSION = 16;
 
     interface Reply { void done(int status, JSONObject data); }
     interface Events { void events(List<JSONObject> batch); void link(boolean up); }
@@ -58,6 +56,20 @@ final class Bridge {
         this.context = context.getApplicationContext();
         this.listener = listener;
         token = token(context);
+        version = bundledVersion(this.context);
+    }
+
+    /** VERSION in the bridge.py this app carries: a running bridge of another version is replaced. */
+    private final int version;
+
+    private static int bundledVersion(Context context) {
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^VERSION = (\\d+)")
+                    .matcher(Userland.read(context.getAssets().open("bridge.py")));
+            return m.find() ? Integer.parseInt(m.group(1)) : -1;
+        } catch (java.io.IOException e) {
+            return -1;
+        }
     }
 
     /** This install's token, made on first use. */
@@ -159,7 +171,7 @@ final class Bridge {
     private static boolean isCurrent(Object[] health) {
         if ((int) health[0] != 200) return false;
         try {
-            return new JSONObject((String) health[1]).optInt("version") == VERSION;
+            return new JSONObject((String) health[1]).optInt("version") == version;
         } catch (JSONException e) {
             return false;
         }
