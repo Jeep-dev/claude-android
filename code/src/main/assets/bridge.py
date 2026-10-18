@@ -594,13 +594,37 @@ def help_choices(text):
     return out
 
 
+INFO_FILE = os.path.join(STATE_DIR, 'claude-info.json')
+
+
 def find_claude_info():
-    """Claude Code's version and the choices of its options, as it reports them."""
+    """Claude Code's version and the choices of its options, as it reports them. Asked once per
+    Claude Code binary (kept in INFO_FILE), at low priority: it never slows a start."""
     global claude_version, choices
     try:
-        out = subprocess.run([claude_path(), '--version'], capture_output=True, text=True, timeout=60).stdout
-        claude_version = out.split()[0] if out.strip() else ''
-        choices = help_choices(subprocess.run([claude_path(), '--help'], capture_output=True, text=True, timeout=60).stdout)
+        path = claude_path()
+        st = os.stat(path)
+        stamp = '%d-%d' % (st.st_size, st.st_mtime)
+        try:
+            with open(INFO_FILE, encoding='utf-8') as f:
+                saved = json.load(f)
+            if saved.get('stamp') == stamp:
+                claude_version, choices = saved.get('version', ''), saved.get('choices', {})
+                return
+        except (OSError, ValueError, AttributeError):
+            pass
+
+        def ask(arg):
+            return subprocess.run([path, arg], capture_output=True, text=True, timeout=120,
+                                  preexec_fn=lambda: os.nice(15)).stdout
+        out = ask('--version')
+        version = out.split()[0] if out.strip() else ''
+        found = help_choices(ask('--help'))
+        claude_version, choices = version, found
+        if version:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            with open(INFO_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'stamp': stamp, 'version': version, 'choices': found}, f)
     except (OSError, subprocess.SubprocessError):
         pass
 

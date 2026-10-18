@@ -56,11 +56,16 @@ final class Bridge {
         this.context = context.getApplicationContext();
         this.listener = listener;
         token = token(context);
-        version = bundledVersion(this.context);
     }
 
     /** VERSION in the bridge.py this app carries: a running bridge of another version is replaced. */
-    private final int version;
+    private int version;
+
+    /** Read once, on the first check (off the main thread). */
+    private int version() {
+        if (version == 0) version = bundledVersion(context);
+        return version;
+    }
 
     private static int bundledVersion(Context context) {
         try {
@@ -168,10 +173,10 @@ final class Bridge {
         });
     }
 
-    private static boolean isCurrent(Object[] health) {
+    private boolean isCurrent(Object[] health) {
         if ((int) health[0] != 200) return false;
         try {
-            return new JSONObject((String) health[1]).optInt("version") == version;
+            return new JSONObject((String) health[1]).optInt("version") == version();
         } catch (JSONException e) {
             return false;
         }
