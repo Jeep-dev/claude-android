@@ -205,6 +205,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private void build() {
         shownLink = null; // a new drawer: its state is shown again
+        drawerPanel = null;
         immersive = Themes.immersive(this);
         applyWindow();
 
@@ -278,6 +279,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
         View main = immersive ? buildImmersive(tb) : buildPlain(tb);
         frame = new DrawerFrame(this, main, buildDrawer());
+        placeImmersive(); // the drawer too, now that it is there
         frame.setListener(() -> {
             hideKeyboard();
             loadSessions();
@@ -404,7 +406,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         // from the top (or just above the keyboard).
         int below = keyboard ? insetBottom + dp(8) : Math.max(insetBottom + dp(8), insetTop);
         composer.setPadding(dp(12), dp(4), dp(12), below);
-        drawerPanel.setPadding(0, insetTop, 0, keyboard ? 0 : insetBottom);
+        if (drawerPanel != null) drawerPanel.setPadding(0, insetTop, 0, keyboard ? 0 : insetBottom);
         ((FrameLayout.LayoutParams) topButtons.getLayoutParams()).topMargin = insetTop;
         ((FrameLayout.LayoutParams) banner.getLayoutParams()).setMargins(dp(12), insetTop + dp(52), dp(12), 0);
         int box = composer.getHeight() > 0 ? composer.getHeight() : below + dp(58);

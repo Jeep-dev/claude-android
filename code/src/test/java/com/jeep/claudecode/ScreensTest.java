@@ -80,6 +80,21 @@ public class ScreensTest {
 
     private static String se(String event) { return "{\"type\":\"stream_event\",\"event\":" + event + "}"; }
 
+    /** Opening the app with the immersive layout and the title chosen (a cold start, not a switch). */
+    @Test public void startsImmersive() throws Exception {
+        android.content.Context c = org.robolectric.RuntimeEnvironment.getApplication();
+        Themes.setImmersive(c, true);
+        Themes.setShowTitle(c, true);
+        try {
+            MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+            idle();
+            shot(a.getWindow().getDecorView(), "00-start-immersive");
+        } finally {
+            Themes.setImmersive(c, false);
+            Themes.setShowTitle(c, false);
+        }
+    }
+
     @Test public void screens() throws Exception {
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
         View root = a.getWindow().getDecorView();
