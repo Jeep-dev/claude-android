@@ -540,7 +540,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
     private void updateFoot() {
         String m = modelInUse();
         String name = m.isEmpty() ? "默认模型" : modelName(m);
-        modelLabel.setText(effort.isEmpty() ? name : name + " " + effort);
+        String level = effortInUse();
+        modelLabel.setText(level.isEmpty() ? name : name + " " + level);
         // The chat's reported window holds for its own model; one picked since has its own.
         boolean same = model.isEmpty() || model.equals(current.model);
         long window = same && current.window > 0 ? current.window : windowOf(m);
@@ -874,7 +875,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void sessionActions(String id, String titleText, String folder) {
-        Dialog sheet = sheet(titleText, tilde(folder));
+        Dialog sheet = sheet(titleText, null);
         LinearLayout card = card(sheet);
         boolean pin = pinned().contains(id);
         option(card, R.drawable.ic_pin, pin ? "取消置顶" : "置顶", null, false, () -> {
@@ -1626,28 +1627,37 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return card;
     }
 
-    private void option(LinearLayout card, int iconRes, String label, String sub, boolean danger, Runnable click) {
+    /** A row: icon, label, and its value on the right. */
+    private void option(LinearLayout card, int iconRes, String label, String value, boolean danger, Runnable click) {
         LinearLayout row = Ui.row(this);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setPadding(dp(14), 0, dp(14), 0);
         row.setMinimumHeight(dp(50));
         row.setBackground(Ui.press(this, null, dp(12)));
-        if (iconRes != 0) row.addView(Ui.icon(this, iconRes, 19, danger ? R.color.danger : R.color.text2));
-        LinearLayout texts = Ui.column(this);
-        texts.setPadding(iconRes != 0 ? dp(12) : 0, 0, 0, 0);
-        texts.addView(Ui.text(this, label, 15.5f, danger ? R.color.danger : R.color.text));
-        if (sub != null && !sub.isEmpty()) {
-            TextView s = Ui.text(this, sub, 12.5f, R.color.text3);
-            s.setPadding(0, dp(3), 0, 0);
-            texts.addView(s);
+        if (iconRes != 0) {
+            row.addView(Ui.icon(this, iconRes, 19, danger ? R.color.danger : R.color.text2));
+            row.addView(new View(this), new LinearLayout.LayoutParams(dp(14), 1));
         }
-        row.addView(texts, Ui.weight());
+        TextView l = Ui.text(this, label, 15.5f, danger ? R.color.danger : R.color.text);
+        l.setSingleLine(true);
+        l.setEllipsize(TextUtils.TruncateAt.END);
+        row.addView(l, new LinearLayout.LayoutParams(0, -2, 1));
+        if (value != null && !value.isEmpty()) {
+            TextView v = Ui.text(this, value, 14, R.color.text3);
+            v.setSingleLine(true);
+            v.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            v.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.45f));
+            v.setPadding(dp(12), 0, 0, 0);
+            row.addView(v);
+        }
         row.setOnClickListener(v -> click.run());
         card.addView(row, Ui.fill());
     }
 
     private void check(LinearLayout card) {
         LinearLayout last = (LinearLayout) card.getChildAt(card.getChildCount() - 1);
-        last.addView(Ui.icon(this, R.drawable.ic_check, 19, R.color.accent));
+        View tick = Ui.icon(this, R.drawable.ic_check, 19, R.color.accent);
+        last.addView(tick);
+        Ui.margins(tick, this, 12, 0, 0, 0);
     }
 
     private String tilde(String p) {
@@ -1660,7 +1670,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         bridge.get("/dirs?path=" + Uri.encode(at), (status, d) -> {
             if (status != 200) { toast("读取文件夹失败"); return; }
             String here = d.optString("path");
-            Dialog sheet = sheet("选择工作文件夹", "新对话会在这个文件夹里运行 Claude Code。\n" + tilde(here));
+            Dialog sheet = sheet("工作文件夹", tilde(here));
             LinearLayout card = card(sheet);
             String parent = d.isNull("parent") ? "" : d.optString("parent");
             if (!parent.isEmpty()) option(card, R.drawable.ic_up, "上一级", null, false, () -> { sheet.dismiss(); folderSheet(parent); });
@@ -1717,63 +1727,63 @@ public final class MainActivity extends Activity implements Bridge.Events {
         });
     }
 
+    /** The thinking level in use: picked here, else Claude Code's own setting. */
+    private String effortInUse() {
+        return !effort.isEmpty() ? effort : settingsEnv().optString("CLAUDE_CODE_EFFORT_LEVEL").toLowerCase(Locale.ROOT);
+    }
+
     private void modelSheet() {
-        Dialog sheet = sheet("模型与思考", "对新消息生效；“默认”用 Claude Code 设置里的。");
-        TextView th = Ui.text(this, "思考", 13, R.color.text3);
-        th.setPadding(dp(4), 0, 0, dp(8));
-        content(sheet).addView(th);
-        LinearLayout levels = Ui.row(this);
-        String[] keys = new String[EFFORTS.length + 1];
-        String[] names = new String[EFFORTS.length + 1];
-        keys[0] = ""; names[0] = "默认";
-        for (int i = 0; i < EFFORTS.length; i++) { keys[i + 1] = EFFORTS[i]; names[i + 1] = EFFORTS[i]; }
-        for (int i = 0; i < keys.length; i++) {
-            String k = keys[i];
-            boolean on = k.equals(effort);
-            TextView b = Ui.text(this, names[i], 12.5f, on ? R.color.bg : R.color.text);
+        Dialog sheet = sheet("模型", null);
+        // Thinking: one segmented bar.
+        LinearLayout bar = Ui.row(this);
+        bar.setPadding(dp(3), dp(3), dp(3), dp(3));
+        bar.setBackground(Ui.round(col(R.color.surface2), dp(12)));
+        String level = effortInUse();
+        for (String e : EFFORTS) {
+            boolean on = e.equals(level);
+            TextView b = Ui.text(this, e, 13.5f, on ? R.color.text : R.color.text2);
             b.setGravity(Gravity.CENTER);
             b.setSingleLine(true);
-            b.setBackground(on ? Ui.round(col(R.color.text), dp(10))
-                    : Ui.round(col(R.color.surface), dp(10), dp(1), col(R.color.border)));
+            if (on) {
+                b.setTypeface(Ui.MEDIUM);
+                b.setBackground(Ui.round(col(R.color.bg), dp(9), dp(1), col(R.color.border)));
+            }
             b.setOnClickListener(v -> {
-                effort = k;
+                effort = e;
                 prefs.edit().putString("effort", effort).apply();
                 sheet.dismiss();
                 updateChrome();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(36), 1);
-            if (i > 0) lp.leftMargin = dp(6);
-            levels.addView(b, lp);
+            bar.addView(b, new LinearLayout.LayoutParams(0, dp(34), 1));
         }
-        content(sheet).addView(levels, Ui.fill());
-        TextView mt = Ui.text(this, "模型", 13, R.color.text3);
-        mt.setPadding(dp(4), dp(16), 0, dp(8));
-        content(sheet).addView(mt);
-        LinearLayout card = card(sheet);
-        // The models in Claude Code's settings, then the ones typed here before: whatever the provider.
+        content(sheet).addView(bar, Ui.fill());
+        Ui.margins(bar, this, 0, 0, 0, 12);
+        // Models: Claude Code's, then ones typed here; each once.
         List<String> all = new ArrayList<>();
-        all.add("");
-        all.addAll(models);
+        if (!defaultModel.isEmpty()) all.add(defaultModel);
+        for (String m : models) if (!all.contains(m)) all.add(m);
         for (String m : usedModels()) if (!all.contains(m)) all.add(m);
+        String inUse = model.isEmpty() ? defaultModel : model;
+        LinearLayout card = card(sheet);
         for (String m : all) {
-            option(card, 0, m.isEmpty() ? "默认" : shortModel(m), m.isEmpty() ? (defaultModel.isEmpty() ? "settings.json" : defaultModel) : m, false, () -> {
+            boolean big = m.toLowerCase(Locale.ROOT).endsWith("[1m]");
+            option(card, 0, shortModel(m), big ? "1M" : null, false, () -> {
                 model = m;
                 prefs.edit().putString("model", model).apply();
                 sheet.dismiss();
                 updateChrome();
             });
-            if (m.equals(model)) check(card);
+            if (m.equals(inUse)) check(card);
         }
-        option(card, R.drawable.ic_pencil, "其他模型…", "填 Claude Code 能用的任意模型名", false, () -> {
+        option(card, R.drawable.ic_plus, "其他模型", null, false, () -> {
             sheet.dismiss();
-            textSheet("其他模型", model, "模型名", false, (t, done) -> {
+            textSheet("其他模型", "", "模型名", false, (t, done) -> {
                 String name = t.trim();
-                if (!name.isEmpty()) {
-                    List<String> used = usedModels();
-                    used.remove(name);
-                    used.add(0, name);
-                    prefs.edit().putString("usedModels", new JSONArray(used.subList(0, Math.min(8, used.size()))).toString()).apply();
-                }
+                if (name.isEmpty()) return;
+                List<String> used = usedModels();
+                used.remove(name);
+                used.add(0, name);
+                prefs.edit().putString("usedModels", new JSONArray(used.subList(0, Math.min(8, used.size()))).toString()).apply();
                 model = name;
                 prefs.edit().putString("model", model).apply();
                 updateChrome();
@@ -1863,106 +1873,93 @@ public final class MainActivity extends Activity implements Bridge.Events {
         LinearLayout box = settingsBox;
         box.removeAllViews();
 
+        // Claude Code: its state, restart, log.
         LinearLayout run = card(box);
         LinearLayout status = Ui.row(this);
-        status.setPadding(dp(12), dp(12), dp(12), dp(12));
-        // The dot sits where the icons of the rows below do.
-        FrameLayout slot = new FrameLayout(this);
+        status.setPadding(dp(14), 0, dp(6), 0);
+        status.setMinimumHeight(dp(54));
         View dot = new View(this);
-        dot.setBackground(Ui.round(col(linked ? R.color.ok : installing || connecting ? R.color.text3 : R.color.danger), dp(5)));
-        slot.addView(dot, new FrameLayout.LayoutParams(dp(10), dp(10), Gravity.CENTER));
-        status.addView(slot, new LinearLayout.LayoutParams(dp(19), dp(19)));
-        LinearLayout texts = Ui.column(this);
-        texts.setPadding(dp(12), 0, 0, 0);
-        TextView name = Ui.text(this, "Claude Code" + (claudeVersion.isEmpty() ? "" : " " + claudeVersion), 16, R.color.text);
+        dot.setBackground(Ui.round(col(linked ? R.color.ok : installing || connecting ? R.color.text3 : R.color.danger), dp(4)));
+        status.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+        TextView name = Ui.text(this, "Claude Code", 16, R.color.text);
         name.setTypeface(Ui.MEDIUM);
-        texts.addView(name);
-        TextView state = Ui.text(this, (linked ? "运行中" : installing ? "正在准备运行环境" : connecting ? "正在启动" : "未运行")
-                + " · 内置 Linux 环境", 12.5f, R.color.text3);
-        state.setPadding(0, dp(3), 0, 0);
-        texts.addView(state);
-        status.addView(texts, Ui.weight());
-        run.addView(status, Ui.fill());
-        option(run, R.drawable.ic_refresh, "重启 Claude Code", "正在进行的回复会中断", false, () -> {
+        name.setPadding(dp(12), 0, dp(8), 0);
+        status.addView(name);
+        status.addView(Ui.text(this, claudeVersion, 13, R.color.text3), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView restart = Ui.text(this, "重启", 14.5f, R.color.accentPress);
+        restart.setPadding(dp(10), dp(8), dp(10), dp(8));
+        restart.setBackground(Ui.press(this, null, dp(8)));
+        restart.setOnClickListener(v -> {
             toast("正在重启…");
             linked = false;
             connect(true);
             fillSettings(null);
         });
-        option(run, R.drawable.ic_list, "运行日志", null, false, this::logSheet);
+        status.addView(restart);
+        run.addView(status, Ui.fill());
+        option(run, R.drawable.ic_list, "日志", null, false, this::logSheet);
 
-        section(box, "模型服务");
+        section(box, "模型");
         LinearLayout api = card(box);
-        JSONObject env = settingsEnv();
-        String url = env.optString("ANTHROPIC_BASE_URL");
-        option(api, R.drawable.ic_link, "API 设置", url.isEmpty() ? "Anthropic 官方" : url, false, this::apiSheet);
-        option(api, R.drawable.ic_bot, "Claude 订阅登录", "在终端里打开 Claude Code，输入 /login", false, () -> openTerminal("claude\r"));
+        String url = settingsEnv().optString("ANTHROPIC_BASE_URL");
+        String host = url.isEmpty() ? "Anthropic" : Uri.parse(url).getHost() != null ? Uri.parse(url).getHost() : url;
+        option(api, R.drawable.ic_link, "API", host, false, this::apiSheet);
+        option(api, R.drawable.ic_bot, "登录 Claude 账号", null, false, () -> openTerminal("claude\r"));
 
         section(box, "对话");
         LinearLayout talk = card(box);
         String folderNow = cwd.isEmpty() ? defaultCwd : cwd;
-        option(talk, R.drawable.ic_folder, "工作文件夹", (folderNow.isEmpty() ? "~/work" : tilde(folderNow)) + " · 新对话在这里运行", false, () -> {
+        option(talk, R.drawable.ic_folder, "工作文件夹", folderNow.isEmpty() ? "~/work" : tilde(folderNow), false, () -> {
             if (!linked) { toast("Claude Code 还没启动好"); return; }
             folderSheet(null);
         });
-
         if (launch != null) {
-            section(box, "Claude Code");
-            LinearLayout cmd = card(box);
             String mode = launch.optString("permissionMode", "bypassPermissions");
             String modeLabel = mode;
-            for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1] + " · " + m[0];
+            for (String[] m : PERMISSION_MODES) if (m[0].equals(mode)) modeLabel = m[1];
             String prompt = launch.optString("appendSystemPrompt");
             String extra = launch.optString("extraArgs");
-            option(cmd, R.drawable.ic_tool, "权限模式", modeLabel, false, () -> permissionSheet(mode));
-            option(cmd, R.drawable.ic_spark, "追加系统提示", prompt.trim().isEmpty() ? "未设置" : oneLine(prompt), false,
-                    () -> textSheet("追加系统提示", prompt, "例如：始终用中文回答", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::refreshSettings));
-            option(cmd, R.drawable.ic_edit_lines, "额外参数", extra.trim().isEmpty() ? "未设置" : extra, false,
-                    () -> textSheet("额外参数", extra, "例如：--max-turns 50 --add-dir ~/notes", false, (t, done) -> saveLaunch("extraArgs", t, done), this::refreshSettings));
+            option(talk, R.drawable.ic_tool, "权限", modeLabel, false, () -> permissionSheet(mode));
+            option(talk, R.drawable.ic_spark, "系统提示", oneLine(prompt), false,
+                    () -> textSheet("系统提示", prompt, "", true, (t, done) -> saveLaunch("appendSystemPrompt", t, done), this::refreshSettings));
+            option(talk, R.drawable.ic_edit_lines, "启动参数", extra.trim(), false,
+                    () -> textSheet("启动参数", extra, "--max-turns 50", false, (t, done) -> saveLaunch("extraArgs", t, done), this::refreshSettings));
             String folder = current.cwd == null || current.cwd.isEmpty() ? folderNow : current.cwd;
-            option(cmd, R.drawable.ic_book, "CLAUDE.md · 全局", "~/.claude/CLAUDE.md，每个对话都带上", false,
-                    () -> memorySheet("global", null, "CLAUDE.md · 全局"));
-            option(cmd, R.drawable.ic_folder, "CLAUDE.md · 文件夹", tilde(folder) + "/CLAUDE.md", false,
-                    () -> memorySheet("folder", folder, "CLAUDE.md · " + tilde(folder)));
-            TextView line = Ui.text(this, commandLine(mode, prompt, extra), 12, R.color.text3);
-            line.setTypeface(Ui.MONO);
-            line.setTextIsSelectable(true);
-            line.setPadding(dp(4), dp(8), dp(4), 0);
-            box.addView(line, Ui.fill());
+            option(talk, R.drawable.ic_book, "CLAUDE.md", "全局", false, () -> memorySheet("global", null, "CLAUDE.md"));
+            option(talk, R.drawable.ic_book, "CLAUDE.md", Ui.base(folder), false,
+                    () -> memorySheet("folder", folder, "CLAUDE.md · " + Ui.base(folder)));
         }
 
         section(box, "扩展");
         LinearLayout ext = card(box);
         int skills = skillNames().size();
-        option(ext, R.drawable.ic_spark, "技能", skills == 0 ? "还没有 · ~/.claude/skills" : skills + " 个 · ~/.claude/skills", false, this::skillsSheet);
+        option(ext, R.drawable.ic_spark, "技能", skills == 0 ? null : String.valueOf(skills), false, this::skillsSheet);
         if (launch != null) {
             int off = disallowed(launch).size();
-            option(ext, R.drawable.ic_tool, "工具", off == 0 ? "全部启用" : "关掉了 " + off + " 个", false, () -> toolsSheet(launch));
-        } else {
-            option(ext, R.drawable.ic_tool, "工具", "Claude Code 启动后可设置", false, () -> toast("Claude Code 还没启动好"));
+            option(ext, R.drawable.ic_tool, "工具", off == 0 ? null : "关闭 " + off, false, () -> toolsSheet(launch));
         }
         int servers = mcpServers().length();
-        option(ext, R.drawable.ic_globe, "MCP 服务器", servers == 0 ? "还没有" : servers + " 个", false, this::mcpSheet);
+        option(ext, R.drawable.ic_globe, "MCP", servers == 0 ? null : String.valueOf(servers), false, this::mcpSheet);
 
-        section(box, "权限与后台");
+        // Background: only what still needs doing, and the keep-alive command.
+        section(box, "后台");
         LinearLayout keep = card(box);
-        option(keep, R.drawable.ic_folder, hasStorage() ? "已允许访问手机存储" : "允许访问手机存储",
-                "在 Claude Code 里是 /sdcard", false, () -> { if (!hasStorage()) requestStorage(); });
+        if (!hasStorage()) option(keep, R.drawable.ic_folder, "允许访问存储", null, false, this::requestStorage);
         android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
-        boolean exempt = pm.isIgnoringBatteryOptimizations(getPackageName());
-        option(keep, R.drawable.ic_check, exempt ? "已不受电池优化" : "不受电池优化", null, false, () -> {
-            if (exempt) return;
-            try {
-                startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
-            } catch (RuntimeException e) {
-                toast("系统不支持这个设置");
-            }
-        });
-        option(keep, R.drawable.ic_gear, "应用设置", "耗电管理里允许完全后台行为和自启动", false, () -> {
+        if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
+            option(keep, R.drawable.ic_check, "关闭电池优化", null, false, () -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
+                } catch (RuntimeException e) {
+                    toast("系统不支持这个设置");
+                }
+            });
+        }
+        option(keep, R.drawable.ic_gear, "应用信息", null, false, () -> {
             try {
                 startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
             } catch (RuntimeException e) {
-                toast("打不开应用设置");
+                toast("打不开应用信息");
             }
         });
         // Android 12+ kills an app's child processes beyond a limit, or busy ones in the background.
@@ -1970,17 +1967,13 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 + "; cmd appops set " + getPackageName() + " RUN_ANY_IN_BACKGROUND allow"
                 + "; settings put global settings_enable_monitor_phantom_procs false"
                 + "; device_config put activity_manager max_phantom_processes 2147483647'";
-        option(keep, R.drawable.ic_copy, "复制 rish 保活命令", "白名单，并关掉安卓的子进程限制", false, () -> copy(rish));
-
-        section(box, "迁移");
-        LinearLayout move = card(box);
-        option(move, R.drawable.ic_file, "从 Termux 导入", "原来的配置、对话记录和 ~/work", false, this::importSheet);
+        option(keep, R.drawable.ic_copy, "复制保活命令", "rish", false, () -> copy(rish));
 
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { /* none */ }
         TextView v = Ui.text(this, "v" + version, 12, R.color.text3);
         v.setGravity(Gravity.CENTER);
-        v.setPadding(0, dp(14), 0, 0);
+        v.setPadding(0, dp(18), 0, 0);
         box.addView(v, Ui.fill());
     }
 
@@ -2010,23 +2003,21 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void skillsSheet() {
-        Dialog sheet = sheet("技能", "Claude Code 的 skill：~/.claude/skills 下每个文件夹一个 SKILL.md，用得上的时候 Claude 会自己读。");
+        Dialog sheet = sheet("技能", null);
         LinearLayout card = card(sheet);
         List<String> names = skillNames();
         for (String n : names) {
-            String text = readFile(new java.io.File(skillsDir(), n + "/SKILL.md"));
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?m)^description:\\s*(.+)$").matcher(text);
-            option(card, R.drawable.ic_spark, n, m.find() ? oneLine(m.group(1)) : null, false, () -> { sheet.dismiss(); skillActions(n); });
+            option(card, R.drawable.ic_spark, n, null, false, () -> { sheet.dismiss(); skillActions(n); });
         }
         if (names.isEmpty()) {
-            TextView none = Ui.text(this, "还没有技能", 14, R.color.text3);
+            TextView none = Ui.text(this, "还没有", 14, R.color.text3);
             none.setGravity(Gravity.CENTER);
             none.setPadding(0, dp(18), 0, dp(18));
             card.addView(none, Ui.fill());
         }
         LinearLayout add = card(sheet);
         Ui.margins(add, this, 0, 10, 0, 0);
-        option(add, R.drawable.ic_plus, "新建技能", null, false, () -> {
+        option(add, R.drawable.ic_plus, "新建", null, false, () -> {
             sheet.dismiss();
             textSheet("新建技能", "", "名称：小写字母、数字和 -", false, (t, done) -> {
                 String n = t.trim();
@@ -2047,9 +2038,9 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void skillActions(String n) {
-        Dialog sheet = sheet(n, "~/.claude/skills/" + n + "/SKILL.md");
+        Dialog sheet = sheet(n, null);
         LinearLayout card = card(sheet);
-        option(card, R.drawable.ic_pencil, "编辑 SKILL.md", null, false, () -> { sheet.dismiss(); editSkill(n); });
+        option(card, R.drawable.ic_pencil, "编辑", null, false, () -> { sheet.dismiss(); editSkill(n); });
         option(card, R.drawable.ic_trash, "删除", null, true, () -> {
             sheet.dismiss();
             deleteTree(new java.io.File(skillsDir(), n));
@@ -2071,7 +2062,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 return;
             }
             relaunch();
-            toast("已保存，下一条消息起生效");
+            toast("已保存");
             done.run();
             refreshSettings();
         }, this::skillsSheet);
@@ -2099,7 +2090,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void toolsSheet(JSONObject launch) {
-        Dialog sheet = sheet("工具", "关掉的工具 Claude Code 不会再用（--disallowedTools），下一条消息起生效。");
+        Dialog sheet = sheet("工具", null);
         LinearLayout card = card(sheet);
         JSONArray tools = savedArray("tools");
         List<String> off = disallowed(launch);
@@ -2108,7 +2099,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         for (String t : off) if (!all.contains(t)) all.add(t);
         for (String t : all) {
             boolean on = !off.contains(t);
-            String sub = t.startsWith("mcp__") ? "MCP · " + t.split("__")[1] : null;
+            String sub = t.startsWith("mcp__") ? t.split("__")[1] : null;
             String label = t.startsWith("mcp__") && t.split("__").length > 2 ? t.substring(t.indexOf("__", 5) + 2) : t;
             option(card, 0, label, sub, false, () -> {
                 List<String> next = new ArrayList<>(off);
@@ -2122,7 +2113,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             if (on) check(card);
         }
         if (all.isEmpty()) {
-            TextView none = Ui.text(this, "发一条消息后，这里会列出 Claude Code 的工具。", 14, R.color.text3);
+            TextView none = Ui.text(this, "发一条消息后显示", 14, R.color.text3);
             none.setGravity(Gravity.CENTER);
             none.setPadding(dp(12), dp(18), dp(12), dp(18));
             card.addView(none, Ui.fill());
@@ -2155,8 +2146,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void mcpSheet() {
-        Dialog sheet = sheet("MCP 服务器", "给 Claude Code 接外部工具。这里加的存在 ~/.ccapp/mcp.json；在终端用 claude mcp add 加的也会列在下面。"
-                + "多数服务器要 node，先在终端运行 apk add nodejs npm。");
+        Dialog sheet = sheet("MCP", null);
         LinearLayout card = card(sheet);
         // Their state, from when a conversation last started.
         Map<String, String> state = new HashMap<>();
@@ -2170,26 +2160,24 @@ public final class MainActivity extends Activity implements Bridge.Events {
         java.util.Iterator<String> it = servers.keys();
         while (it.hasNext()) names.add(it.next());
         for (String n : names) {
-            JSONObject cfg = servers.optJSONObject(n);
-            String what = cfg == null ? "" : cfg.has("url") ? cfg.optString("url") : (cfg.optString("command") + " " + joinArgs(cfg.optJSONArray("args"))).trim();
             String s = state.get(n);
-            option(card, R.drawable.ic_globe, n, (s == null ? "" : mcpState(s) + " · ") + what, false, () -> { sheet.dismiss(); mcpActions(n); });
+            option(card, R.drawable.ic_globe, n, s == null ? null : mcpState(s), false, () -> { sheet.dismiss(); mcpActions(n); });
         }
         for (Map.Entry<String, String> e : state.entrySet()) {
             if (servers.has(e.getKey())) continue;
-            option(card, R.drawable.ic_globe, e.getKey(), mcpState(e.getValue()) + " · claude mcp 添加的，在终端里管理", false, () -> {});
+            option(card, R.drawable.ic_globe, e.getKey(), mcpState(e.getValue()), false, () -> toast("用 claude mcp 管理"));
         }
         if (names.isEmpty() && state.isEmpty()) {
-            TextView none = Ui.text(this, "还没有 MCP 服务器", 14, R.color.text3);
+            TextView none = Ui.text(this, "还没有", 14, R.color.text3);
             none.setGravity(Gravity.CENTER);
             none.setPadding(0, dp(18), 0, dp(18));
             card.addView(none, Ui.fill());
         }
         LinearLayout add = card(sheet);
         Ui.margins(add, this, 0, 10, 0, 0);
-        option(add, R.drawable.ic_plus, "添加服务器", "粘贴说明里的 JSON 配置", false, () -> {
+        option(add, R.drawable.ic_plus, "添加", null, false, () -> {
             sheet.dismiss();
-            textSheet("添加 MCP 服务器", "", "{\n  \"名称\": {\n    \"command\": \"npx\",\n    \"args\": [\"-y\", \"包名\"]\n  }\n}", true, (t, done) -> {
+            textSheet("添加 MCP", "", "{\n  \"名称\": {\n    \"command\": \"npx\",\n    \"args\": [\"-y\", \"包名\"]\n  }\n}", true, (t, done) -> {
                 JSONObject in;
                 try {
                     in = new JSONObject(t.trim());
@@ -2209,7 +2197,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                     n++;
                 }
                 if (n == 0) { toast("没有找到服务器配置"); return; }
-                if (saveMcp(all)) { toast("已添加，下一条消息起生效"); done.run(); }
+                if (saveMcp(all)) { toast("已添加"); done.run(); }
             }, this::mcpSheet);
         });
         sheet.show();
@@ -2225,17 +2213,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
         }
     }
 
-    private static String joinArgs(JSONArray a) {
-        if (a == null) return "";
-        StringBuilder b = new StringBuilder();
-        for (int i = 0; i < a.length(); i++) b.append(i > 0 ? " " : "").append(a.optString(i));
-        return b.toString();
-    }
-
     private void mcpActions(String n) {
-        Dialog sheet = sheet(n, "~/.ccapp/mcp.json");
+        Dialog sheet = sheet(n, null);
         LinearLayout card = card(sheet);
-        option(card, R.drawable.ic_pencil, "编辑配置", null, false, () -> {
+        option(card, R.drawable.ic_pencil, "编辑", null, false, () -> {
             sheet.dismiss();
             String text;
             try { text = mcpServers().optJSONObject(n).toString(2); } catch (Exception e) { text = "{}"; }
@@ -2244,7 +2225,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
                 try { cfg = new JSONObject(t.trim()); } catch (JSONException e) { toast("不是有效的 JSON：" + e.getMessage()); return; }
                 JSONObject all = mcpServers();
                 try { all.put(n, cfg); } catch (JSONException ignored) { /* string key */ }
-                if (saveMcp(all)) { toast("已保存，下一条消息起生效"); done.run(); }
+                if (saveMcp(all)) { toast("已保存"); done.run(); }
             }, this::mcpSheet);
         });
         option(card, R.drawable.ic_trash, "删除", null, true, () -> {
@@ -2306,14 +2287,14 @@ public final class MainActivity extends Activity implements Bridge.Events {
     }
 
     private void apiSheet() {
-        Dialog sheet = sheet("API 设置", "写进 ~/.claude/settings.json。DeepSeek、GPT 网关等任何 Anthropic 格式的接口都行；地址留空就是 Anthropic 官方。");
+        Dialog sheet = sheet("API", null);
         JSONObject env = settingsEnv();
         String key = env.optString("ANTHROPIC_AUTH_TOKEN", env.optString("ANTHROPIC_API_KEY"));
-        EditText url = field(sheet, "API 地址", env.optString("ANTHROPIC_BASE_URL"), "例如 https://api.deepseek.com/anthropic");
+        EditText url = field(sheet, "地址", env.optString("ANTHROPIC_BASE_URL"), "https://api.anthropic.com");
         EditText token = field(sheet, "API Key", key, "sk-…");
-        EditText name = field(sheet, "默认模型（可不填）", env.optString("ANTHROPIC_MODEL"), "例如 deepseek-chat");
+        EditText name = field(sheet, "模型", env.optString("ANTHROPIC_MODEL"), "");
         LinearLayout actions = Ui.row(this);
-        TextView raw = button("编辑 settings.json", false, v -> {
+        TextView raw = button("settings.json", false, v -> {
             sheet.dismiss();
             String text;
             try { text = settingsJson().toString(2); } catch (JSONException e) { text = "{}"; }
@@ -2334,7 +2315,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
             put(e, "ANTHROPIC_AUTH_TOKEN", k);
             put(e, "ANTHROPIC_MODEL", name.getText().toString().trim());
             try { json.put("env", e); } catch (JSONException ignored) { /* string key */ }
-            if (saveSettings(json)) { toast("已保存，下一条消息起生效"); sheet.dismiss(); refreshSettings(); }
+            if (saveSettings(json)) { toast("已保存"); sheet.dismiss(); refreshSettings(); }
         });
         ok.setBackground(Ui.press(this, Ui.round(col(R.color.text), dp(10)), dp(10)));
         ok.setTextColor(col(R.color.bg));
@@ -2374,8 +2355,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private void importSheet() {
         String command = "mkdir -p /sdcard/Download/ccapp && cp -r ~/.claude ~/work /sdcard/Download/ccapp/";
-        Dialog sheet = sheet("从 Termux 导入", "先在 Termux 里运行下面这行，把原来的配置、对话记录和 ~/work 复制到手机存储；"
-                + "提示 Permission denied 的话先运行一次 termux-setup-storage。然后点导入。");
+        Dialog sheet = sheet("从 Termux 导入", "在 Termux 里运行这行，再点导入");
         TextView code = Ui.text(this, command, 12.5f, R.color.text);
         code.setTypeface(Ui.MONO);
         code.setTextIsSelectable(true);
@@ -2463,7 +2443,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         String bridgeLog = Userland.tail(userland.file(Userland.HOME + "/.ccapp/bridge.log"), 16_000);
         String runLog = Userland.tail(userland.log, 8_000);
         String text = "== bridge.log ==\n" + (bridgeLog.isEmpty() ? "（空）\n" : bridgeLog) + "\n== 启动 ==\n" + (runLog.isEmpty() ? "（空）\n" : runLog);
-        Dialog sheet = sheet("运行日志", null);
+        Dialog sheet = sheet("日志", null);
         TextView t = Ui.text(this, text, 11.5f, R.color.text);
         t.setTypeface(Ui.MONO);
         t.setTextIsSelectable(true);
@@ -2481,17 +2461,10 @@ public final class MainActivity extends Activity implements Bridge.Events {
         return t.length() > 40 ? t.substring(0, 40) + "…" : t;
     }
 
-    private static String commandLine(String mode, String prompt, String extra) {
-        StringBuilder b = new StringBuilder("claude -p --permission-mode ").append(mode);
-        if (!prompt.trim().isEmpty()) b.append(" --append-system-prompt '").append(oneLine(prompt)).append("'");
-        if (!extra.trim().isEmpty()) b.append(' ').append(extra.trim());
-        return b.toString();
-    }
-
     private void saveLaunch(String key, String value, Runnable done) {
         bridge.post("/launch", obj(key, value), (status, data) -> {
             if (status == 200) {
-                toast("已保存，下一条消息起生效");
+                toast("已保存");
                 done.run();
             } else {
                 toast(status == 400 ? "参数有误：" + data.optString("error") : "保存失败");
@@ -2503,7 +2476,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
         Dialog sheet = sheet("权限模式", null);
         LinearLayout card = card(sheet);
         for (String[] m : PERMISSION_MODES) {
-            option(card, 0, m[1] + " · " + m[0], m[2], false, () -> saveLaunch("permissionMode", m[0], () -> {
+            option(card, 0, m[1], null, false, () -> saveLaunch("permissionMode", m[0], () -> {
                 sheet.dismiss();
                 refreshSettings();
             }));
@@ -2516,11 +2489,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
         String q = "/memory?scope=" + scope + (folder == null ? "" : "&cwd=" + Uri.encode(folder));
         bridge.get(q, (status, data) -> {
             if (status != 200) { toast("读取 CLAUDE.md 失败"); return; }
-            textSheet(title, data.optString("text"), "写给 Claude Code 的长期指令", true, (t, done) -> {
+            textSheet(title, data.optString("text"), "", true, (t, done) -> {
                 JSONObject body = obj("scope", scope, "text", t);
                 if (folder != null) body = obj("scope", scope, "cwd", folder, "text", t);
                 bridge.post("/memory", body, (s2, r2) -> {
-                    if (s2 == 200) { toast("已保存，下一条消息起生效"); done.run(); } else toast("保存失败");
+                    if (s2 == 200) { toast("已保存"); done.run(); } else toast("保存失败");
                 });
             }, this::refreshSettings);
         });
