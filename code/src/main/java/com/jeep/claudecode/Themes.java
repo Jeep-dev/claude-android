@@ -63,6 +63,15 @@ final class Themes {
         return theme;
     }
 
+    /** The immersive layout: the conversation under the status bar, the buttons and box as glass. */
+    static boolean immersive(Context c) {
+        return c.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("immersive", false);
+    }
+
+    static void setImmersive(Context c, boolean on) {
+        c.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("immersive", on).apply();
+    }
+
     static void set(Context c, String id) {
         c.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putString("theme", id).apply();
         load(c, id);

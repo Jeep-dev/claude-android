@@ -277,6 +277,16 @@ public class ScreensTest {
         shot(a.getWindow().getDecorView(), "14-jump");
         Fonts.setSize(a, 1);
         Themes.set(a, "system");
+        Themes.setImmersive(a, true);
+        call(a, "restyle");
+        idle();
+        shot(a.getWindow().getDecorView(), "15-immersive");
+        Themes.set(a, "dark");
+        call(a, "restyle");
+        idle();
+        shot(a.getWindow().getDecorView(), "15-immersive-dark");
+        Themes.set(a, "system");
+        Themes.setImmersive(a, false);
     }
 
     static final class RecyclerScroll {

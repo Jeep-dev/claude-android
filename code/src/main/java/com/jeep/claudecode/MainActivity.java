@@ -13,6 +13,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -144,7 +145,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
                 | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         night = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-        Themes.window(getWindow(), this);
         build();
         switchTo(newChat());
         renderSessions();
@@ -194,16 +194,19 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     // ================= layout =================
 
+    /** The immersive layout (a setting): the conversation under the status bar and floating glass. */
+    private boolean immersive;
+    private Glass.Host host;
+    private View stage, fadeTop, fadeBottom, composer;
+    private LinearLayout topButtons, drawerPanel;
+    /** The status bar's height and what covers the bottom (navigation bar or keyboard), immersive only. */
+    private int insetTop, insetBottom;
+
     private void build() {
         shownLink = null; // a new drawer: its state is shown again
-        LinearLayout main = Ui.column(this);
-        main.setBackgroundColor(col(R.color.bg));
+        immersive = Themes.immersive(this);
+        applyWindow();
 
-        LinearLayout top = Ui.row(this);
-        top.setPadding(dp(6), 0, dp(6), 0);
-        ImageView menu = Ui.iconButton(this, R.drawable.ic_sidebar, 38, 20, R.color.text2);
-        menu.setOnClickListener(v -> frame.open());
-        top.addView(menu, new LinearLayout.LayoutParams(dp(38), dp(38)));
         title = Ui.text(this, "新对话", 14.5f, R.color.text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setGravity(Gravity.CENTER);
@@ -211,20 +214,12 @@ public final class MainActivity extends Activity implements Bridge.Events {
         title.setEllipsize(TextUtils.TruncateAt.END);
         title.setPadding(dp(6), 0, dp(6), 0);
         title.setOnClickListener(v -> scrollToEnd(true));
-        top.addView(title, Ui.weight());
-        ImageView terminal = Ui.iconButton(this, R.drawable.ic_terminal, 38, 20, R.color.text2);
-        terminal.setOnClickListener(v -> openTerminal(null));
-        top.addView(terminal, new LinearLayout.LayoutParams(dp(38), dp(38)));
-        main.addView(top, new LinearLayout.LayoutParams(-1, dp(40)));
 
         banner = Ui.text(this, "与 Claude Code 的连接断开了，正在重连…", 13.5f, R.color.danger);
         banner.setPadding(dp(12), dp(9), dp(12), dp(9));
         banner.setBackground(Ui.round(col(R.color.dangerSoft), dp(10)));
         banner.setVisibility(View.GONE);
-        main.addView(banner, Ui.fill());
-        Ui.margins(banner, this, 12, 4, 12, 0);
 
-        FrameLayout content = new FrameLayout(this);
         list = new RecyclerView(this);
         list.setLayoutManager(new LinearLayoutManager(this));
         list.setClipToPadding(false);
@@ -263,12 +258,11 @@ public final class MainActivity extends Activity implements Bridge.Events {
         list.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             if (stick && b != ob && list.getScrollState() != RecyclerView.SCROLL_STATE_DRAGGING) scrollToEnd(false);
         });
-        content.addView(list, new FrameLayout.LayoutParams(-1, -1));
         emptyView = new ScrollView(this);
         emptyView.setFillViewport(true);
-        content.addView(emptyView, new FrameLayout.LayoutParams(-1, -1));
         jump = Ui.column(this);
         jump.setVisibility(View.GONE);
+        if (immersive) host = new Glass.Host(this);
         toTop = jumpButton(R.drawable.ic_arrow_up);
         toTop.setOnClickListener(v -> scrollToTop());
         toBottom = jumpButton(R.drawable.ic_arrow_down);
@@ -280,11 +274,8 @@ public final class MainActivity extends Activity implements Bridge.Events {
         FrameLayout.LayoutParams tb = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
         tb.bottomMargin = dp(12);
         tb.rightMargin = dp(14);
-        content.addView(jump, tb);
-        main.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        main.addView(buildComposer(), Ui.fill());
-
+        View main = immersive ? buildImmersive(tb) : buildPlain(tb);
         frame = new DrawerFrame(this, main, buildDrawer());
         frame.setListener(() -> {
             hideKeyboard();
@@ -293,12 +284,156 @@ public final class MainActivity extends Activity implements Bridge.Events {
         setContentView(frame);
     }
 
+    /** The usual layout: a bar with the title on top, the conversation, the box below it. */
+    private View buildPlain(FrameLayout.LayoutParams jumpAt) {
+        LinearLayout main = Ui.column(this);
+        main.setBackgroundColor(col(R.color.bg));
+        LinearLayout top = Ui.row(this);
+        top.setPadding(dp(6), 0, dp(6), 0);
+        ImageView menu = Ui.iconButton(this, R.drawable.ic_sidebar, 38, 20, R.color.text2);
+        menu.setOnClickListener(v -> frame.open());
+        top.addView(menu, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        top.addView(title, Ui.weight());
+        ImageView terminal = Ui.iconButton(this, R.drawable.ic_terminal, 38, 20, R.color.text2);
+        terminal.setOnClickListener(v -> openTerminal(null));
+        top.addView(terminal, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        main.addView(top, new LinearLayout.LayoutParams(-1, dp(40)));
+        main.addView(banner, Ui.fill());
+        Ui.margins(banner, this, 12, 4, 12, 0);
+        FrameLayout content = new FrameLayout(this);
+        content.addView(list, new FrameLayout.LayoutParams(-1, -1));
+        content.addView(emptyView, new FrameLayout.LayoutParams(-1, -1));
+        content.addView(jump, jumpAt);
+        main.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
+        composer = buildComposer();
+        main.addView(composer, Ui.fill());
+        return main;
+    }
+
+    /**
+     * The immersive layout: the conversation fills the screen, under the status bar and the
+     * navigation bar; the two buttons and the box float over it as frosted glass, and the
+     * conversation fades out under the status bar and the box.
+     */
+    private View buildImmersive(FrameLayout.LayoutParams jumpAt) {
+        host.setBackgroundColor(col(R.color.bg));
+        FrameLayout behind = new FrameLayout(this);
+        behind.addView(list, new FrameLayout.LayoutParams(-1, -1));
+        behind.addView(emptyView, new FrameLayout.LayoutParams(-1, -1));
+        list.setClipToPadding(false);
+        emptyView.setClipToPadding(false);
+        stage = behind;
+        host.source = behind;
+        host.addView(behind, new FrameLayout.LayoutParams(-1, -1));
+        // Anything that moves behind the glass draws the glass again.
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(RecyclerView rv, int dx, int dy) { host.invalidate(); }
+        });
+        emptyView.setOnScrollChangeListener((v, x, y, ox, oy) -> host.invalidate());
+
+        int bg = col(R.color.bg);
+        fadeTop = new View(this);
+        fadeTop.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Glass.alpha(bg, 0.72f), Glass.alpha(bg, 0.45f), Glass.alpha(bg, 0f)}));
+        host.addView(fadeTop, new FrameLayout.LayoutParams(-1, dp(64), Gravity.TOP));
+        fadeBottom = new View(this);
+        fadeBottom.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Glass.alpha(bg, 0f), Glass.alpha(bg, 0.55f), Glass.alpha(bg, 0.85f)}));
+        host.addView(fadeBottom, new FrameLayout.LayoutParams(-1, dp(110), Gravity.BOTTOM));
+
+        topButtons = Ui.row(this);
+        topButtons.setPadding(dp(14), 0, dp(14), 0);
+        Glass.Pane menu = glassButton(R.drawable.ic_sidebar);
+        menu.setOnClickListener(v -> frame.open());
+        topButtons.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        topButtons.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        Glass.Pane terminal = glassButton(R.drawable.ic_terminal);
+        terminal.setOnClickListener(v -> openTerminal(null));
+        topButtons.addView(terminal, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        host.addView(topButtons, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+        host.addView(banner, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+        host.addView(jump, jumpAt);
+        composer = buildComposer();
+        host.addView(composer, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        // The conversation keeps clear of the box as it grows (more lines, files, the command menu).
+        composer.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (b - t != ob - ot) placeImmersive();
+        });
+        host.setOnApplyWindowInsetsListener((v, insets) -> {
+            insetTop = insets.getSystemWindowInsetTop();
+            insetBottom = insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT >= 30) {
+                insetBottom = Math.max(insetBottom, insets.getInsets(android.view.WindowInsets.Type.ime()
+                        | android.view.WindowInsets.Type.navigationBars()).bottom);
+            }
+            placeImmersive();
+            return insets;
+        });
+        placeImmersive();
+        return host;
+    }
+
+    private Glass.Pane glassButton(int icon) {
+        Glass.Pane b = new Glass.Pane(this, host, -1, Glass.alpha(col(R.color.surface), 0.55f),
+                Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
+        b.setGravity(Gravity.CENTER);
+        b.addView(Ui.icon(this, icon, 21, R.color.text2));
+        return b;
+    }
+
+    /** Places what floats, and keeps the conversation clear of it, for the bars' sizes now. */
+    private void placeImmersive() {
+        if (!immersive || composer == null) return;
+        composer.setPadding(dp(12), dp(4), dp(12), insetBottom + dp(12));
+        drawerPanel.setPadding(0, insetTop, 0, insetBottom);
+        ((FrameLayout.LayoutParams) topButtons.getLayoutParams()).topMargin = insetTop + dp(6);
+        ((FrameLayout.LayoutParams) banner.getLayoutParams()).setMargins(dp(12), insetTop + dp(58), dp(12), 0);
+        fadeTop.getLayoutParams().height = insetTop + dp(56);
+        fadeBottom.getLayoutParams().height = insetBottom + dp(110);
+        int box = composer.getHeight() > 0 ? composer.getHeight() : insetBottom + dp(70);
+        ((FrameLayout.LayoutParams) jump.getLayoutParams()).bottomMargin = box + dp(8);
+        int top = insetTop + dp(56);
+        if (list.getPaddingTop() != top || list.getPaddingBottom() != box + dp(12)) {
+            list.setPadding(dp(18), top, dp(18), box + dp(12));
+            emptyView.setPadding(0, top, 0, box);
+            if (stick) scrollToEnd(false);
+        }
+        host.requestLayout();
+    }
+
+    /** The window for the layout: edge to edge (immersive) or below the status bar. */
+    private void applyWindow() {
+        Window w = getWindow();
+        Themes.window(w, this);
+        View d = w.getDecorView();
+        int edge = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+        int flags = d.getSystemUiVisibility();
+        d.setSystemUiVisibility(immersive ? flags | edge : flags & ~edge);
+        if (immersive) {
+            w.setStatusBarColor(Color.TRANSPARENT);
+            w.setNavigationBarColor(Color.TRANSPARENT);
+            if (Build.VERSION.SDK_INT >= 29) {
+                w.setStatusBarContrastEnforced(false);
+                w.setNavigationBarContrastEnforced(false);
+            }
+        }
+        d.requestApplyInsets();
+    }
+
     private View buildComposer() {
         LinearLayout wrap = Ui.column(this);
         wrap.setPadding(dp(12), dp(4), dp(12), dp(18));
-        LinearLayout card = Ui.column(this);
-        card.setBackground(Ui.round(col(R.color.surface), dp(26), dp(1), col(R.color.border)));
-        card.setElevation(dp(2));
+        LinearLayout card;
+        if (immersive) {
+            card = new Glass.Pane(this, host, dp(26), Glass.alpha(col(R.color.surface), 0.55f),
+                    Glass.alpha(col(R.color.surface), 0.94f), col(R.color.border));
+            card.setOrientation(LinearLayout.VERTICAL);
+        } else {
+            card = Ui.column(this);
+            card.setBackground(Ui.round(col(R.color.surface), dp(26), dp(1), col(R.color.border)));
+            card.setElevation(dp(2));
+        }
         card.setPadding(dp(6), dp(4), dp(6), dp(4));
 
         slashScroll = new ScrollView(this) {
@@ -329,7 +464,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
         input = new EditText(this);
         input.setBackground(null);
-        input.setHint("输入 / 以使用命令");
         input.setHintTextColor(col(R.color.text3));
         input.setTextColor(col(R.color.text));
         input.setTextSize(16);
@@ -376,6 +510,7 @@ public final class MainActivity extends Activity implements Bridge.Events {
 
     private View buildDrawer() {
         LinearLayout d = Ui.column(this);
+        drawerPanel = d;
         d.setBackgroundColor(col(R.color.sidebar));
         d.setClickable(true);
 
@@ -1985,6 +2120,15 @@ public final class MainActivity extends Activity implements Bridge.Events {
             restyle();
         }));
         text.addView(size, Ui.fill());
+        LinearLayout look = Ui.row(this);
+        look.setPadding(dp(14), dp(6), dp(8), dp(6));
+        look.setMinimumHeight(dp(50));
+        look.addView(Ui.text(this, "沉浸式", 15.5f, R.color.text), new LinearLayout.LayoutParams(0, -2, 1));
+        look.addView(segmented(new String[]{"关", "开"}, Themes.immersive(this) ? 1 : 0, i -> {
+            Themes.setImmersive(this, i == 1);
+            restyle();
+        }));
+        themes.addView(look, Ui.fill());
         option(text, 0, "中文字体", Fonts.name(Fonts.cjk(this)), false, () -> fontSheet(true));
         option(text, 0, "英文字体", Fonts.name(Fonts.latin(this)), false, () -> fontSheet(false));
     }
@@ -2498,7 +2642,6 @@ public final class MainActivity extends Activity implements Bridge.Events {
         chat.draft = input.getText().toString();
         current = null;
         md = new Md(talkContext(), this::copy, this::openUrl, this::userFile);
-        Themes.window(getWindow(), this);
         build();
         switchTo(chat);
         renderSessions();
